@@ -16,3 +16,14 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .vscode/
+
+# Keep non-Go2 tasks local to this checkout.
+/src/tasks/tracking/
+/src/tasks/velocity/config/a2/
+/src/tasks/velocity/config/as2/
+/src/tasks/velocity/config/g1/
+/src/tasks/velocity/config/g1_23dof/
+/src/tasks/velocity/config/h1_2/
+/src/tasks/velocity/config/h2/
+/src/tasks/velocity/config/r1/
+/scripts/csv_to_npz.py
