@@ -75,6 +75,18 @@ python -m pip install -e .
 `scipy`。单独升级 MuJoCo 或 Warp 可能破坏当前 mjlab 使用的接口。
 已有环境也可以重新运行上面的安装命令，使版本符合这些约束。
 
+W&B 固定为 `wandb==0.22.3`，兼容当前 RSL-RL 日志初始化使用的
+`wandb.Settings(start_method="thread")`。部分新版 W&B 已移除此参数，
+会报 `ValidationError: start_method / Extra inputs are not permitted`。
+已有环境遇到该错误时，在训练使用的 Conda 环境中执行：
+
+```bash
+python -m pip install "wandb==0.22.3"
+```
+
+随后重新运行原训练命令。此错误发生在 W&B 初始化阶段，与机器人任务或
+速度奖励无关；不需要修改 `site-packages` 或降级 Pydantic。
+
 检查 Go2 后腿双足站立任务，并运行一次小规模 GPU 训练验证：
 
 ```bash
@@ -95,4 +107,3 @@ python scripts/train.py Unitree-Go2-RearStand --env.scene.num-envs 4096
 ## 总结
 
 按照上述步骤完成后，您已经准备好在虚拟环境中运行相关程序。若遇到问题，请参考各组件的官方文档或检查依赖安装是否正确。
-

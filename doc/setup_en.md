@@ -76,6 +76,21 @@ The installer pins the compatible simulation stack to `mjlab==1.2.0`,
 APIs used by this version of mjlab. Re-run the command above to update an
 existing environment to these constraints.
 
+W&B is pinned to `wandb==0.22.3` to support the deprecated
+`wandb.Settings(start_method="thread")` call in the current RSL-RL logger.
+Versions that remove this option fail with
+`ValidationError: start_method / Extra inputs are not permitted`.
+To repair an existing environment, activate the Conda environment used for
+training and run:
+
+```bash
+python -m pip install "wandb==0.22.3"
+```
+
+Then repeat the training command. This failure happens during W&B startup,
+before training, and is unrelated to the robot task or velocity rewards.
+No edits to `site-packages` or Pydantic downgrade are needed.
+
 Check the Go2 rear-leg standing task and run a short GPU training check:
 
 ```bash
@@ -96,4 +111,3 @@ GPU memory is insufficient. Checkpoints are saved under `logs/rsl_rl/go2_stand/`
 ## Summary
 
 After completing the above steps, you are ready to run the related programs in the virtual environment. If you encounter any issues, refer to the official documentation of each component or check if the dependencies are installed correctly.
-
