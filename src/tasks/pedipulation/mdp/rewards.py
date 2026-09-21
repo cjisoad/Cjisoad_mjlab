@@ -5,6 +5,8 @@ import torch
 from mjlab.managers import SceneEntityCfg
 from mjlab.utils.lab_api.math import euler_xyz_from_quat
 
+from .contacts import foot_in_contact
+
 
 ROBOT = SceneEntityCfg('robot')
 STAND_GOAL = SceneEntityCfg('robot', site_names=('stand_goal',), preserve_order=True)
@@ -38,8 +40,7 @@ def handstand_orientation(env):
 
 
 def handstand_feet_on_air(env):
-  force = _forces(env, 'front_contact')
-  return (force.norm(dim=-1) <= 1.).all(-1).float()
+  return (~foot_in_contact(env, 'front_contact')).all(-1).float()
 
 
 def handstand_feet_height_exp(env, asset_cfg=STAND_GOAL):
@@ -127,7 +128,7 @@ def feet_clearance(env, asset_cfg=REAR):
 
 
 def contact(env):
-  contacts = _forces(env, 'rear_contact')[:, :, 2] > 1.
+  contacts = foot_in_contact(env, 'rear_contact')
   return (contacts.sum(-1) == 1).float() * _gate(env)
 
 

@@ -118,6 +118,32 @@ class PedipulationFrameTests(unittest.TestCase):
 
 
 class PedipulationTaskTests(unittest.TestCase):
+  def test_contact_rewards_and_critic_ignore_force_direction(self):
+    from src.tasks.pedipulation.mdp import observations, rewards
+    # Zero, exactly threshold, negative support, positive support, lateral contact.
+    forces = torch.tensor([
+      [[0., 0., 0.], [0., 0., 0.]],
+      [[0., 0., -1.], [0., 0., 1.]],
+      [[0., 0., -100.], [0., 0., 0.]],
+      [[0., 0., 100.], [0., 0., -100.]],
+      [[2., 0., 0.], [0., 0., 0.]],
+    ])
+    state = SimpleNamespace(height_score=torch.tensor(.8))
+    env = SimpleNamespace(
+      scene={name: SimpleNamespace(data=SimpleNamespace(force=forces.clone()))
+             for name in ('front_contact', 'rear_contact')},
+      action_manager=SimpleNamespace(get_term=lambda _: state),
+    )
+    expected = torch.tensor([[0., 0.], [0., 0.], [1., 0.], [1., 1.], [1., 0.]])
+    for sign in (1., -1.):
+      for sensor in env.scene.values():
+        sensor.data.force = forces * sign
+      torch.testing.assert_close(observations.foot_contact(env), torch.cat((expected, expected), -1))
+      torch.testing.assert_close(rewards.contact(env), torch.tensor([0., 0., 1., 0., 1.]))
+      torch.testing.assert_close(rewards.handstand_feet_on_air(env), torch.tensor([1., 1., 0., 0., 0.]))
+    state.height_score.fill_(.7)
+    torch.testing.assert_close(rewards.contact(env), torch.zeros(5))
+
   def test_stand_goal_site_is_attached_to_base_and_has_expected_position(self):
     from src.tasks.pedipulation.robot import STAND_GOAL_POS, get_stand_spec
     model = get_stand_spec().compile()
@@ -152,6 +178,8 @@ class PedipulationTaskTests(unittest.TestCase):
     self.assertIn('Unitree-Go2-RearStand', list_tasks())
     cfg = load_env_cfg('Pedipulation')
     self.assertEqual(len(cfg.rewards), 25)
+    self.assertEqual(cfg.rewards['lin_vel_z'].weight, .3)
+    self.assertEqual(load_env_cfg('Unitree-Go2-RearStand').rewards['lin_vel_z'].weight, .2)
     self.assertEqual(cfg.rewards['default_pos_front'].weight, -.1)
     self.assertEqual(cfg.rewards['default_pos_rear'].weight, -.1)
     self.assertEqual(cfg.rewards['default_pos_reward_FL'].weight, .5)

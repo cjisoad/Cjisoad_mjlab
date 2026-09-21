@@ -2,6 +2,8 @@
 
 import torch
 
+from .contacts import foot_in_contact
+
 
 def policy_state(env, add_noise=True):
   robot = env.scene['robot'].data
@@ -33,6 +35,6 @@ def domain_parameters(env):
 
 
 def foot_contact(env):
-  front = env.scene['front_contact'].data.force[:, :, 2] > 1.
-  rear = env.scene['rear_contact'].data.force[:, :, 2] > 1.
+  front = foot_in_contact(env, 'front_contact')
+  rear = foot_in_contact(env, 'rear_contact')
   return torch.cat((front, rear), dim=-1).float()
