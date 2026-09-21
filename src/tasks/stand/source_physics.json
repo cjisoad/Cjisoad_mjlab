@@ -1,0 +1,1894 @@
+{
+  "schema_version": 1,
+  "source": "resources/robots/go2/urdf/go2.urdf",
+  "sha256": "4f306754e9b3d73930ac8362aa456eb8912f2e886665618e7eced9627c1704a4",
+  "regenerate": "python -m src.tasks.stand.robot --snapshot-from /path/to/My_unitree_go2_gym/resources/robots/go2/urdf/go2.urdf --output src/tasks/stand/source_physics.json",
+  "asset_options": {
+    "density": 0.001,
+    "replace_cylinder_with_capsule": true,
+    "collapse_fixed_joints": false,
+    "self_collisions": 0
+  },
+  "approximation_notes": [
+    "Collision-only links use source density; PhysX inferred inertials may differ.",
+    "Capsule cylinder sections preserve URDF length; engine contact response differs.",
+    "Direct parent-child excludes approximate PhysX adjacent-link filtering."
+  ],
+  "links": [
+    {
+      "name": "base",
+      "inertial": {
+        "mass": 6.921,
+        "origin": {
+          "xyz": [
+            0.021112,
+            0.0,
+            -0.005366
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          0.02448,
+          0.098077,
+          0.107,
+          0.00012166,
+          0.0014849,
+          -3.12e-05
+        ]
+      },
+      "collisions": [
+        {
+          "type": "box",
+          "shape": {
+            "size": [
+              0.3762,
+              0.0935,
+              0.114
+            ]
+          },
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Head_upper",
+      "inertial": {
+        "mass": 0.001,
+        "origin": {
+          "xyz": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          9.6e-06,
+          9.6e-06,
+          9.6e-06,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "collisions": [
+        {
+          "type": "cylinder",
+          "shape": {
+            "radius": 0.05,
+            "length": 0.09
+          },
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Head_lower",
+      "inertial": {
+        "mass": 0.001,
+        "origin": {
+          "xyz": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          9.6e-06,
+          9.6e-06,
+          9.6e-06,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "collisions": [
+        {
+          "type": "sphere",
+          "shape": {
+            "radius": 0.047
+          },
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "FL_hip",
+      "inertial": {
+        "mass": 0.678,
+        "origin": {
+          "xyz": [
+            -0.0054,
+            0.00194,
+            -0.000105
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          0.00048,
+          0.000884,
+          0.000596,
+          -3.01e-06,
+          1.11e-06,
+          -1.42e-06
+        ]
+      },
+      "collisions": [
+        {
+          "type": "cylinder",
+          "shape": {
+            "length": 0.04,
+            "radius": 0.046
+          },
+          "origin": {
+            "xyz": [
+              0.0,
+              0.08,
+              0.0
+            ],
+            "rpy": [
+              1.5707963267948966,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "FL_thigh",
+      "inertial": {
+        "mass": 1.152,
+        "origin": {
+          "xyz": [
+            -0.00374,
+            -0.0223,
+            -0.0327
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          0.00584,
+          0.0058,
+          0.00103,
+          8.72e-05,
+          -0.000289,
+          0.000808
+        ]
+      },
+      "collisions": [
+        {
+          "type": "box",
+          "shape": {
+            "size": [
+              0.11,
+              0.0245,
+              0.034
+            ]
+          },
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              -0.1065
+            ],
+            "rpy": [
+              0.0,
+              1.5707963267948966,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "FL_calf",
+      "inertial": {
+        "mass": 0.154,
+        "origin": {
+          "xyz": [
+            0.00548,
+            -0.000975,
+            -0.115
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          0.00108,
+          0.0011,
+          3.29e-05,
+          3.4e-07,
+          1.72e-05,
+          8.28e-06
+        ]
+      },
+      "collisions": [
+        {
+          "type": "cylinder",
+          "shape": {
+            "length": 0.12,
+            "radius": 0.012
+          },
+          "origin": {
+            "xyz": [
+              0.008,
+              0.0,
+              -0.06
+            ],
+            "rpy": [
+              0.0,
+              -0.21,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "FL_calflower",
+      "inertial": null,
+      "collisions": [
+        {
+          "type": "cylinder",
+          "shape": {
+            "length": 0.065,
+            "radius": 0.011
+          },
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "FL_calflower1",
+      "inertial": null,
+      "collisions": [
+        {
+          "type": "cylinder",
+          "shape": {
+            "length": 0.03,
+            "radius": 0.0155
+          },
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "FL_foot",
+      "inertial": {
+        "mass": 0.04,
+        "origin": {
+          "xyz": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          9.6e-06,
+          9.6e-06,
+          9.6e-06,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "collisions": [
+        {
+          "type": "sphere",
+          "shape": {
+            "radius": 0.022
+          },
+          "origin": {
+            "xyz": [
+              -0.002,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "FR_hip",
+      "inertial": {
+        "mass": 0.678,
+        "origin": {
+          "xyz": [
+            -0.0054,
+            -0.00194,
+            -0.000105
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          0.00048,
+          0.000884,
+          0.000596,
+          3.01e-06,
+          1.11e-06,
+          1.42e-06
+        ]
+      },
+      "collisions": [
+        {
+          "type": "cylinder",
+          "shape": {
+            "length": 0.04,
+            "radius": 0.046
+          },
+          "origin": {
+            "xyz": [
+              0.0,
+              -0.08,
+              0.0
+            ],
+            "rpy": [
+              1.5707963267948966,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "FR_thigh",
+      "inertial": {
+        "mass": 1.152,
+        "origin": {
+          "xyz": [
+            -0.00374,
+            0.0223,
+            -0.0327
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          0.00584,
+          0.0058,
+          0.00103,
+          -8.72e-05,
+          -0.000289,
+          -0.000808
+        ]
+      },
+      "collisions": [
+        {
+          "type": "box",
+          "shape": {
+            "size": [
+              0.11,
+              0.0245,
+              0.034
+            ]
+          },
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              -0.1065
+            ],
+            "rpy": [
+              0.0,
+              1.5707963267948966,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "FR_calf",
+      "inertial": {
+        "mass": 0.154,
+        "origin": {
+          "xyz": [
+            0.00548,
+            0.000975,
+            -0.115
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          0.00108,
+          0.0011,
+          3.29e-05,
+          -3.4e-07,
+          1.72e-05,
+          -8.28e-06
+        ]
+      },
+      "collisions": [
+        {
+          "type": "cylinder",
+          "shape": {
+            "length": 0.12,
+            "radius": 0.013
+          },
+          "origin": {
+            "xyz": [
+              0.01,
+              0.0,
+              -0.06
+            ],
+            "rpy": [
+              0.0,
+              -0.2,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "FR_calflower",
+      "inertial": null,
+      "collisions": [
+        {
+          "type": "cylinder",
+          "shape": {
+            "length": 0.065,
+            "radius": 0.011
+          },
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "FR_calflower1",
+      "inertial": null,
+      "collisions": [
+        {
+          "type": "cylinder",
+          "shape": {
+            "length": 0.03,
+            "radius": 0.0155
+          },
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "FR_foot",
+      "inertial": {
+        "mass": 0.04,
+        "origin": {
+          "xyz": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          9.6e-06,
+          9.6e-06,
+          9.6e-06,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "collisions": [
+        {
+          "type": "sphere",
+          "shape": {
+            "radius": 0.022
+          },
+          "origin": {
+            "xyz": [
+              -0.002,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "RL_hip",
+      "inertial": {
+        "mass": 0.678,
+        "origin": {
+          "xyz": [
+            0.0054,
+            0.00194,
+            -0.000105
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          0.00048,
+          0.000884,
+          0.000596,
+          3.01e-06,
+          -1.11e-06,
+          -1.42e-06
+        ]
+      },
+      "collisions": [
+        {
+          "type": "cylinder",
+          "shape": {
+            "length": 0.04,
+            "radius": 0.046
+          },
+          "origin": {
+            "xyz": [
+              0.0,
+              0.08,
+              0.0
+            ],
+            "rpy": [
+              1.5707963267948966,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "RL_thigh",
+      "inertial": {
+        "mass": 1.152,
+        "origin": {
+          "xyz": [
+            -0.00374,
+            -0.0223,
+            -0.0327
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          0.00584,
+          0.0058,
+          0.00103,
+          8.72e-05,
+          -0.000289,
+          0.000808
+        ]
+      },
+      "collisions": [
+        {
+          "type": "box",
+          "shape": {
+            "size": [
+              0.11,
+              0.0245,
+              0.034
+            ]
+          },
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              -0.1065
+            ],
+            "rpy": [
+              0.0,
+              1.5707963267948966,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "RL_calf",
+      "inertial": {
+        "mass": 0.154,
+        "origin": {
+          "xyz": [
+            0.00548,
+            -0.000975,
+            -0.115
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          0.00108,
+          0.0011,
+          3.29e-05,
+          3.4e-07,
+          1.72e-05,
+          8.28e-06
+        ]
+      },
+      "collisions": [
+        {
+          "type": "cylinder",
+          "shape": {
+            "length": 0.12,
+            "radius": 0.013
+          },
+          "origin": {
+            "xyz": [
+              0.01,
+              0.0,
+              -0.06
+            ],
+            "rpy": [
+              0.0,
+              -0.2,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "RL_calflower",
+      "inertial": null,
+      "collisions": [
+        {
+          "type": "cylinder",
+          "shape": {
+            "length": 0.065,
+            "radius": 0.011
+          },
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "RL_calflower1",
+      "inertial": null,
+      "collisions": [
+        {
+          "type": "cylinder",
+          "shape": {
+            "length": 0.03,
+            "radius": 0.0155
+          },
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "RL_foot",
+      "inertial": {
+        "mass": 0.04,
+        "origin": {
+          "xyz": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          9.6e-06,
+          9.6e-06,
+          9.6e-06,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "collisions": [
+        {
+          "type": "sphere",
+          "shape": {
+            "radius": 0.022
+          },
+          "origin": {
+            "xyz": [
+              -0.002,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "RR_hip",
+      "inertial": {
+        "mass": 0.678,
+        "origin": {
+          "xyz": [
+            0.0054,
+            -0.00194,
+            -0.000105
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          0.00048,
+          0.000884,
+          0.000596,
+          -3.01e-06,
+          -1.11e-06,
+          1.42e-06
+        ]
+      },
+      "collisions": [
+        {
+          "type": "cylinder",
+          "shape": {
+            "length": 0.04,
+            "radius": 0.046
+          },
+          "origin": {
+            "xyz": [
+              0.0,
+              -0.08,
+              0.0
+            ],
+            "rpy": [
+              1.5707963267948966,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "RR_thigh",
+      "inertial": {
+        "mass": 1.152,
+        "origin": {
+          "xyz": [
+            -0.00374,
+            0.0223,
+            -0.0327
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          0.00584,
+          0.0058,
+          0.00103,
+          -8.72e-05,
+          -0.000289,
+          -0.000808
+        ]
+      },
+      "collisions": [
+        {
+          "type": "box",
+          "shape": {
+            "size": [
+              0.11,
+              0.0245,
+              0.034
+            ]
+          },
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              -0.1065
+            ],
+            "rpy": [
+              0.0,
+              1.5707963267948966,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "RR_calf",
+      "inertial": {
+        "mass": 0.154,
+        "origin": {
+          "xyz": [
+            0.00548,
+            0.000975,
+            -0.115
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          0.00108,
+          0.0011,
+          3.29e-05,
+          -3.4e-07,
+          1.72e-05,
+          -8.28e-06
+        ]
+      },
+      "collisions": [
+        {
+          "type": "cylinder",
+          "shape": {
+            "length": 0.12,
+            "radius": 0.013
+          },
+          "origin": {
+            "xyz": [
+              0.01,
+              0.0,
+              -0.06
+            ],
+            "rpy": [
+              0.0,
+              -0.2,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "RR_calflower",
+      "inertial": null,
+      "collisions": [
+        {
+          "type": "cylinder",
+          "shape": {
+            "length": 0.065,
+            "radius": 0.011
+          },
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "RR_calflower1",
+      "inertial": null,
+      "collisions": [
+        {
+          "type": "cylinder",
+          "shape": {
+            "length": 0.03,
+            "radius": 0.0155
+          },
+          "origin": {
+            "xyz": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "RR_foot",
+      "inertial": {
+        "mass": 0.04,
+        "origin": {
+          "xyz": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          9.6e-06,
+          9.6e-06,
+          9.6e-06,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "collisions": [
+        {
+          "type": "sphere",
+          "shape": {
+            "radius": 0.022
+          },
+          "origin": {
+            "xyz": [
+              -0.002,
+              0.0,
+              0.0
+            ],
+            "rpy": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "imu",
+      "inertial": {
+        "mass": 0.0,
+        "origin": {
+          "xyz": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "collisions": []
+    },
+    {
+      "name": "radar",
+      "inertial": {
+        "mass": 0.0,
+        "origin": {
+          "xyz": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rpy": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "inertia": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "collisions": []
+    }
+  ],
+  "joints": [
+    {
+      "name": "Head_upper_joint",
+      "type": "fixed",
+      "parent": "base",
+      "child": "Head_upper",
+      "origin": {
+        "xyz": [
+          0.285,
+          0.0,
+          0.01
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "Head_lower_joint",
+      "type": "fixed",
+      "parent": "Head_upper",
+      "child": "Head_lower",
+      "origin": {
+        "xyz": [
+          0.008,
+          0.0,
+          -0.07
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "FL_hip_joint",
+      "type": "revolute",
+      "parent": "base",
+      "child": "FL_hip",
+      "origin": {
+        "xyz": [
+          0.1934,
+          0.0465,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "limit": {
+        "lower": -1.0472,
+        "upper": 1.0472,
+        "effort": 23.7,
+        "velocity": 30.1
+      }
+    },
+    {
+      "name": "FL_thigh_joint",
+      "type": "revolute",
+      "parent": "FL_hip",
+      "child": "FL_thigh",
+      "origin": {
+        "xyz": [
+          0.0,
+          0.0955,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "limit": {
+        "lower": -1.5708,
+        "upper": 3.4907,
+        "effort": 23.7,
+        "velocity": 30.1
+      }
+    },
+    {
+      "name": "FL_calf_joint",
+      "type": "revolute",
+      "parent": "FL_thigh",
+      "child": "FL_calf",
+      "origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          -0.213
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "limit": {
+        "lower": -2.7227,
+        "upper": -0.83776,
+        "effort": 35.55,
+        "velocity": 20.07
+      }
+    },
+    {
+      "name": "FL_calflower_joint",
+      "type": "fixed",
+      "parent": "FL_calf",
+      "child": "FL_calflower",
+      "origin": {
+        "xyz": [
+          0.02,
+          0.0,
+          -0.148
+        ],
+        "rpy": [
+          0.0,
+          0.05,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "FL_calflower1_joint",
+      "type": "fixed",
+      "parent": "FL_calflower",
+      "child": "FL_calflower1",
+      "origin": {
+        "xyz": [
+          -0.01,
+          0.0,
+          -0.04
+        ],
+        "rpy": [
+          0.0,
+          0.48,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "FL_foot_joint",
+      "type": "fixed",
+      "parent": "FL_calf",
+      "child": "FL_foot",
+      "origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          -0.213
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "FR_hip_joint",
+      "type": "revolute",
+      "parent": "base",
+      "child": "FR_hip",
+      "origin": {
+        "xyz": [
+          0.1934,
+          -0.0465,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "limit": {
+        "lower": -1.0472,
+        "upper": 1.0472,
+        "effort": 23.7,
+        "velocity": 30.1
+      }
+    },
+    {
+      "name": "FR_thigh_joint",
+      "type": "revolute",
+      "parent": "FR_hip",
+      "child": "FR_thigh",
+      "origin": {
+        "xyz": [
+          0.0,
+          -0.0955,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "limit": {
+        "lower": -1.5708,
+        "upper": 3.4907,
+        "effort": 23.7,
+        "velocity": 30.1
+      }
+    },
+    {
+      "name": "FR_calf_joint",
+      "type": "revolute",
+      "parent": "FR_thigh",
+      "child": "FR_calf",
+      "origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          -0.213
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "limit": {
+        "lower": -2.7227,
+        "upper": -0.83776,
+        "effort": 35.55,
+        "velocity": 20.07
+      }
+    },
+    {
+      "name": "FR_calflower_joint",
+      "type": "fixed",
+      "parent": "FR_calf",
+      "child": "FR_calflower",
+      "origin": {
+        "xyz": [
+          0.02,
+          0.0,
+          -0.148
+        ],
+        "rpy": [
+          0.0,
+          0.05,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "FR_calflower1_joint",
+      "type": "fixed",
+      "parent": "FR_calflower",
+      "child": "FR_calflower1",
+      "origin": {
+        "xyz": [
+          -0.01,
+          0.0,
+          -0.04
+        ],
+        "rpy": [
+          0.0,
+          0.48,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "FR_foot_joint",
+      "type": "fixed",
+      "parent": "FR_calf",
+      "child": "FR_foot",
+      "origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          -0.213
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "RL_hip_joint",
+      "type": "revolute",
+      "parent": "base",
+      "child": "RL_hip",
+      "origin": {
+        "xyz": [
+          -0.1934,
+          0.0465,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "limit": {
+        "lower": -1.0472,
+        "upper": 1.0472,
+        "effort": 23.7,
+        "velocity": 30.1
+      }
+    },
+    {
+      "name": "RL_thigh_joint",
+      "type": "revolute",
+      "parent": "RL_hip",
+      "child": "RL_thigh",
+      "origin": {
+        "xyz": [
+          0.0,
+          0.0955,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "limit": {
+        "lower": -0.5236,
+        "upper": 4.5379,
+        "effort": 23.7,
+        "velocity": 30.1
+      }
+    },
+    {
+      "name": "RL_calf_joint",
+      "type": "revolute",
+      "parent": "RL_thigh",
+      "child": "RL_calf",
+      "origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          -0.213
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "limit": {
+        "lower": -2.7227,
+        "upper": -0.83776,
+        "effort": 35.55,
+        "velocity": 20.07
+      }
+    },
+    {
+      "name": "RL_calflower_joint",
+      "type": "fixed",
+      "parent": "RL_calf",
+      "child": "RL_calflower",
+      "origin": {
+        "xyz": [
+          0.02,
+          0.0,
+          -0.148
+        ],
+        "rpy": [
+          0.0,
+          0.05,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "RL_calflower1_joint",
+      "type": "fixed",
+      "parent": "RL_calflower",
+      "child": "RL_calflower1",
+      "origin": {
+        "xyz": [
+          -0.01,
+          0.0,
+          -0.04
+        ],
+        "rpy": [
+          0.0,
+          0.48,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "RL_foot_joint",
+      "type": "fixed",
+      "parent": "RL_calf",
+      "child": "RL_foot",
+      "origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          -0.213
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "RR_hip_joint",
+      "type": "revolute",
+      "parent": "base",
+      "child": "RR_hip",
+      "origin": {
+        "xyz": [
+          -0.1934,
+          -0.0465,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "limit": {
+        "lower": -1.0472,
+        "upper": 1.0472,
+        "effort": 23.7,
+        "velocity": 30.1
+      }
+    },
+    {
+      "name": "RR_thigh_joint",
+      "type": "revolute",
+      "parent": "RR_hip",
+      "child": "RR_thigh",
+      "origin": {
+        "xyz": [
+          0.0,
+          -0.0955,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "limit": {
+        "lower": -0.5236,
+        "upper": 4.5379,
+        "effort": 23.7,
+        "velocity": 30.1
+      }
+    },
+    {
+      "name": "RR_calf_joint",
+      "type": "revolute",
+      "parent": "RR_thigh",
+      "child": "RR_calf",
+      "origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          -0.213
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "limit": {
+        "lower": -2.7227,
+        "upper": -0.83776,
+        "effort": 35.55,
+        "velocity": 20.07
+      }
+    },
+    {
+      "name": "RR_calflower_joint",
+      "type": "fixed",
+      "parent": "RR_calf",
+      "child": "RR_calflower",
+      "origin": {
+        "xyz": [
+          0.02,
+          0.0,
+          -0.148
+        ],
+        "rpy": [
+          0.0,
+          0.05,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "RR_calflower1_joint",
+      "type": "fixed",
+      "parent": "RR_calflower",
+      "child": "RR_calflower1",
+      "origin": {
+        "xyz": [
+          -0.01,
+          0.0,
+          -0.04
+        ],
+        "rpy": [
+          0.0,
+          0.48,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "RR_foot_joint",
+      "type": "fixed",
+      "parent": "RR_calf",
+      "child": "RR_foot",
+      "origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          -0.213
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "imu_joint",
+      "type": "fixed",
+      "parent": "base",
+      "child": "imu",
+      "origin": {
+        "xyz": [
+          -0.02557,
+          0.0,
+          0.04232
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "radar_joint",
+      "type": "fixed",
+      "parent": "base",
+      "child": "radar",
+      "origin": {
+        "xyz": [
+          0.28945,
+          0.0,
+          -0.046825
+        ],
+        "rpy": [
+          0.0,
+          2.8782,
+          0.0
+        ]
+      },
+      "axis": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  ]
+}
