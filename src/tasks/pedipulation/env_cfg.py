@@ -30,7 +30,9 @@ def pedipulation_env_cfg(play=False):
   reward_terms = {}
   for name, weight in sorted(REWARD_WEIGHTS.items()):
     params = {}
-    if name in ('handstand_feet_height_exp', 'feet_height_symmetry'):
+    if name == 'handstand_feet_height_exp':
+      params['asset_cfg'] = SceneEntityCfg('robot', site_names=('stand_goal',), preserve_order=True)
+    elif name == 'feet_height_symmetry':
       params['asset_cfg'] = SceneEntityCfg('robot', site_names=('FL', 'FR'), preserve_order=True)
     elif name == 'feet_clearance':
       params['asset_cfg'] = SceneEntityCfg('robot', site_names=('RL', 'RR'), preserve_order=True)

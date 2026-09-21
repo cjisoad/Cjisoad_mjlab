@@ -17,7 +17,7 @@ import math
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from .constants import DEFAULT_ANGLES, JOINT_NAMES, LEGS
+from .constants import DEFAULT_ANGLES, JOINT_NAMES, LEGS, STAND_GOAL_POS
 
 
 SNAPSHOT_PATH = Path(__file__).with_name("source_physics.json")
@@ -137,6 +137,10 @@ def get_stand_spec():
     if source_name.endswith("_foot"):
       ET.SubElement(body, "site", name=source_name[:2], type="sphere",
                     size="0.022", pos="0 0 0", rgba="1 0 0 1", group="5")
+    if source_name == "base":
+      ET.SubElement(body, "site", name="stand_goal", type="sphere",
+                    size="0.012", pos=_numbers(STAND_GOAL_POS),
+                    rgba="1 0 0 1", group="5")
     if source_name == "imu":
       ET.SubElement(body, "site", name="imu", pos="0 0 0", group="5")
 

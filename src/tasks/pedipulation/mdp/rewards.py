@@ -7,6 +7,7 @@ from mjlab.utils.lab_api.math import euler_xyz_from_quat
 
 
 ROBOT = SceneEntityCfg('robot')
+STAND_GOAL = SceneEntityCfg('robot', site_names=('stand_goal',), preserve_order=True)
 FRONT = SceneEntityCfg('robot', site_names=('FL', 'FR'), preserve_order=True)
 REAR = SceneEntityCfg('robot', site_names=('RL', 'RR'), preserve_order=True)
 
@@ -41,7 +42,7 @@ def handstand_feet_on_air(env):
   return (force.norm(dim=-1) <= 1.).all(-1).float()
 
 
-def handstand_feet_height_exp(env, asset_cfg=FRONT):
+def handstand_feet_height_exp(env, asset_cfg=STAND_GOAL):
   heights = env.scene[asset_cfg.name].data.site_pos_w[:, asset_cfg.site_ids, 2]
   return torch.exp(-(heights - .67).abs().sum(-1) * 10)
 
@@ -77,14 +78,24 @@ def ang_xz(env):
   return roll.abs() * _gate(env)
 
 
-def default_pos(env):
+def default_pos_front(env):
   state = _state(env)
-  return (state.joint_pos - state.desired_angles).abs().sum(-1)
+  return (state.joint_pos[:, :6] - state.desired_angles[:6]).abs().sum(-1)
 
 
-def default_pos_reward(env):
+def default_pos_rear(env):
   state = _state(env)
-  return torch.exp(-(state.joint_pos[:, :6] - state.desired_angles[:6]).abs().sum(-1)) * _gate(env)
+  return (state.joint_pos[:, 6:] - state.desired_angles[6:]).abs().sum(-1)
+
+
+def default_pos_reward_FL(env):
+  state = _state(env)
+  return torch.exp(-(state.joint_pos[:, :3] - state.desired_angles[:3]).abs().sum(-1)) * _gate(env)
+
+
+def default_pos_reward_FR(env):
+  state = _state(env)
+  return torch.exp(-(state.joint_pos[:, 3:6] - state.desired_angles[3:6]).abs().sum(-1)) * _gate(env)
 
 
 def default_hip_pos(env):

@@ -118,13 +118,44 @@ class PedipulationFrameTests(unittest.TestCase):
 
 
 class PedipulationTaskTests(unittest.TestCase):
+  def test_stand_goal_site_is_attached_to_base_and_has_expected_position(self):
+    from src.tasks.pedipulation.robot import STAND_GOAL_POS, get_stand_spec
+    model = get_stand_spec().compile()
+    site = model.site('stand_goal')
+    self.assertEqual(model.body(int(site.bodyid.item())).name, 'base_link')
+    torch.testing.assert_close(torch.tensor(site.pos), torch.tensor(STAND_GOAL_POS, dtype=torch.float64), atol=1e-7, rtol=0.)
+
+  def test_handstand_height_reward_reads_stand_goal(self):
+    from src.tasks.pedipulation.mdp.rewards import handstand_feet_height_exp
+    data = SimpleNamespace(site_pos_w=torch.tensor([[[0., 0., .67]], [[0., 0., .60]]]))
+    env = SimpleNamespace(scene={'robot': SimpleNamespace(data=data)})
+    cfg = SimpleNamespace(name='robot', site_ids=[0])
+    torch.testing.assert_close(handstand_feet_height_exp(env, cfg), torch.exp(-torch.tensor([0., .07]) * 10))
+
+  def test_default_position_rewards_are_split_by_requested_legs(self):
+    from src.tasks.pedipulation.mdp import rewards
+    state = SimpleNamespace(
+      joint_pos=torch.zeros(1, 12),
+      desired_angles=torch.arange(12, dtype=torch.float32),
+      height_score=torch.tensor(.8),
+    )
+    env = SimpleNamespace(action_manager=SimpleNamespace(get_term=lambda _: state))
+    torch.testing.assert_close(rewards.default_pos_front(env), torch.tensor([15.]))
+    torch.testing.assert_close(rewards.default_pos_rear(env), torch.tensor([51.]))
+    torch.testing.assert_close(rewards.default_pos_reward_FL(env), torch.exp(torch.tensor([-3.])))
+    torch.testing.assert_close(rewards.default_pos_reward_FR(env), torch.exp(torch.tensor([-12.])))
+
   def test_task_registered_independently(self):
     import src.tasks
     from mjlab.tasks.registry import list_tasks, load_env_cfg, load_rl_cfg
     self.assertIn('Pedipulation', list_tasks())
     self.assertIn('Unitree-Go2-RearStand', list_tasks())
     cfg = load_env_cfg('Pedipulation')
-    self.assertEqual(len(cfg.rewards), 23)
+    self.assertEqual(len(cfg.rewards), 25)
+    self.assertEqual(cfg.rewards['default_pos_front'].weight, -.1)
+    self.assertEqual(cfg.rewards['default_pos_rear'].weight, -.1)
+    self.assertEqual(cfg.rewards['default_pos_reward_FL'].weight, .5)
+    self.assertEqual(cfg.rewards['default_pos_reward_FR'].weight, .5)
     self.assertEqual(load_rl_cfg('Pedipulation').experiment_name, 'pedipulation')
     self.assertEqual(load_rl_cfg('Unitree-Go2-RearStand').experiment_name, 'go2_stand')
     self.assertIn('pedipulation', cfg.commands['stand'].__class__.__module__)
