@@ -50,6 +50,6 @@ def stand_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
     num_steps_per_env=24,
     max_iterations=15000,
     clip_actions=100.0,
-    logger="tensorboard",
+    logger="wandb",
     upload_model=False,
   )
