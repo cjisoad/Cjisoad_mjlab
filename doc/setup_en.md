@@ -67,8 +67,31 @@ Navigate to the project root directory and install them with:
 
 ```bash
 cd unitree_rl_mjlab
-pip install -e .
+python -m pip install -e .
 ```
+
+The installer pins the compatible simulation stack to `mjlab==1.2.0`,
+`mujoco==3.5.0`, `mujoco-warp==3.5.0`, and `warp-lang==1.12.0`, and installs
+`scipy` for terrain imports. Upgrading MuJoCo or Warp independently can break
+APIs used by this version of mjlab. Re-run the command above to update an
+existing environment to these constraints.
+
+Check the Go2 rear-leg standing task and run a short GPU training check:
+
+```bash
+python scripts/train.py Unitree-Go2-RearStand --help
+python scripts/train.py Unitree-Go2-RearStand --env.scene.num-envs 16 --agent.max-iterations 1
+```
+
+Start full training with:
+
+```bash
+python scripts/train.py Unitree-Go2-RearStand --env.scene.num-envs 4096
+```
+
+GPU 0 is selected by default. Explicit GPU lists use Python list syntax:
+`--gpu-ids '[0]'` or `--gpu-ids '[0, 1]'`. Reduce the environment count if
+GPU memory is insufficient. Checkpoints are saved under `logs/rsl_rl/go2_stand/`.
 
 ## Summary
 

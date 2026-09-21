@@ -50,7 +50,7 @@ Multi-GPU Training: Scale to multiple GPUs using --gpu-ids:
 
 ```bash
 python scripts/train.py Unitree-G1-Flat \
-  --gpu-ids 0 1 \
+  --gpu-ids '[0, 1]' \
   --env.scene.num-envs=4096
 ```
 

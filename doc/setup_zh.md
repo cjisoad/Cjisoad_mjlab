@@ -67,8 +67,30 @@ sudo apt install -y libyaml-cpp-dev libboost-all-dev libeigen3-dev libspdlog-dev
 
 ```bash
 cd unitree_rl_mjlab
-pip install -e .
+python -m pip install -e .
 ```
+
+安装配置固定了相互兼容的仿真依赖：`mjlab==1.2.0`、`mujoco==3.5.0`、
+`mujoco-warp==3.5.0` 和 `warp-lang==1.12.0`，并补充地形模块导入所需的
+`scipy`。单独升级 MuJoCo 或 Warp 可能破坏当前 mjlab 使用的接口。
+已有环境也可以重新运行上面的安装命令，使版本符合这些约束。
+
+检查 Go2 后腿双足站立任务，并运行一次小规模 GPU 训练验证：
+
+```bash
+python scripts/train.py Unitree-Go2-RearStand --help
+python scripts/train.py Unitree-Go2-RearStand --env.scene.num-envs 16 --agent.max-iterations 1
+```
+
+正式训练命令：
+
+```bash
+python scripts/train.py Unitree-Go2-RearStand --env.scene.num-envs 4096
+```
+
+默认使用 GPU 0。显式指定 GPU 时，列表必须使用 Python 列表语法：
+`--gpu-ids '[0]'` 或 `--gpu-ids '[0, 1]'`。显存不足时可减少并行环境数量。
+模型保存在 `logs/rsl_rl/go2_stand/` 下。
 
 ## 总结
 
