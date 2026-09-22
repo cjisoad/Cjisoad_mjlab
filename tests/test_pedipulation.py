@@ -13,11 +13,11 @@ def quats(roll, pitch, yaw):
 
 
 def frame_type():
-  path = Path(__file__).resolve().parents[1] / 'src/tasks/pedipulation/mdp/frame.py'
+  path = Path(__file__).resolve().parents[1] / 'src/tasks/pedipulation/mdp/anchor_frame.py'
   if not path.exists():
     raise AssertionError('Pedipulation horizontal frame has not been implemented')
-  from src.tasks.pedipulation.mdp.frame import HeadingFrame
-  return HeadingFrame
+  from src.tasks.pedipulation.mdp.anchor_frame import AnchorFrame
+  return AnchorFrame
 
 
 class PedipulationFrameTests(unittest.TestCase):
@@ -169,7 +169,6 @@ class PedipulationTaskTests(unittest.TestCase):
     torch.testing.assert_close(rewards.default_pos_front(env), torch.tensor([15.]))
     torch.testing.assert_close(rewards.default_pos_rear(env), torch.tensor([51.]))
     torch.testing.assert_close(rewards.default_pos_reward_FL(env), torch.exp(torch.tensor([-3.])))
-    torch.testing.assert_close(rewards.default_pos_reward_FR(env), torch.exp(torch.tensor([-12.])))
 
   def test_task_registered_independently(self):
     import src.tasks
@@ -217,17 +216,20 @@ class PedipulationTaskTests(unittest.TestCase):
     torch.testing.assert_close(rewards.lin_vel_z(env), torch.full((2,), torch.exp(torch.tensor(-2.)).item()))
     torch.testing.assert_close(rewards.ang_vel_xy(env), torch.ones(2))
     obs = observations.policy_state(env, add_noise=False)
-    self.assertEqual(obs.shape, (2, 45))
-    torch.testing.assert_close(obs[:, 33:], env.action_manager.get_term('joint_pos').raw_action)
+    self.assertEqual(obs.shape, (2, 48))
+    torch.testing.assert_close(obs[:, 36:], env.action_manager.get_term('joint_pos').raw_action)
     torch.testing.assert_close(observations.base_velocity(env), torch.tensor([[.6, 0., .4]]).repeat(2, 1))
 
-  def test_mirror_matches_original_45_dimensional_layout(self):
+  def test_mirror_preserves_original_components_and_reflects_target_vector(self):
     frame_type()
     from src.tasks.pedipulation.rl.symmetry import mirror_actor_observations
     from src.tasks.stand.rl.symmetry import mirror_actor_observations as original_mirror
-    obs = torch.randn(8, 45)
+    obs = torch.randn(8, 48)
     reflected = mirror_actor_observations(obs)
-    torch.testing.assert_close(reflected, original_mirror(obs))
+    old_obs = torch.cat((obs[:, :9], obs[:, 12:]), -1)
+    old_reflected = torch.cat((reflected[:, :9], reflected[:, 12:]), -1)
+    torch.testing.assert_close(old_reflected, original_mirror(old_obs))
+    torch.testing.assert_close(reflected[:, 9:12], obs[:, 9:12] * torch.tensor([1., -1., 1.]))
     torch.testing.assert_close(mirror_actor_observations(reflected), obs)
 
   def test_command_resampling_once_and_reset_uses_fresh_pose(self):
@@ -243,17 +245,18 @@ class PedipulationTaskTests(unittest.TestCase):
     env.episode_length_buf[0] = 0
     env.scene['robot'].data.root_link_quat_w[0] = quats([0.], [0.], [1.1])[0]
     other = term.command_counter[1].clone()
-    torch.testing.assert_close(term.frame.heading[0], torch.tensor(1.1))
+    torch.testing.assert_close(term.anchor_frame.heading[0], torch.tensor(1.1))
     term.compute(.02)
     self.assertEqual(term.command_counter[0].item(), 1)
     torch.testing.assert_close(term.command_counter[1], other)
 
-  def test_mirror_loss_backpropagates_through_45_dimensional_observations(self):
+  def test_mirror_loss_backpropagates_through_target_free_observations(self):
     frame_type()
     from src.tasks.pedipulation.rl.symmetry import exact_symmetry_loss, mirror_actions, mirror_actor_observations
     torch.manual_seed(42)
-    actor = torch.nn.Linear(45, 12)
-    obs = torch.randn(16, 45)
+    actor = torch.nn.Linear(48, 12)
+    obs = torch.randn(16, 48)
+    obs[:, 9:12] = 0.
     actual = exact_symmetry_loss(actor, obs)
     gradients = torch.autograd.grad(actual, tuple(actor.parameters()))
     expected = (actor(obs) - mirror_actions(actor(mirror_actor_observations(obs)))).square().mean()

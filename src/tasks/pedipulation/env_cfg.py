@@ -32,6 +32,8 @@ def pedipulation_env_cfg(play=False):
     params = {}
     if name == 'handstand_feet_height_exp':
       params['asset_cfg'] = SceneEntityCfg('robot', site_names=('stand_goal',), preserve_order=True)
+    elif name == 'default_pos_reward_FR':
+      params['asset_cfg'] = SceneEntityCfg('robot', site_names=('FR',), preserve_order=True)
     elif name == 'feet_height_symmetry':
       params['asset_cfg'] = SceneEntityCfg('robot', site_names=('FL', 'FR'), preserve_order=True)
     elif name == 'feet_clearance':
@@ -71,7 +73,7 @@ def pedipulation_env_cfg(play=False):
         'foot_contact': ObservationTermCfg(func=observations.foot_contact),
       }),
     },
-    commands={'stand': PedipulationCommandCfg(resampling_time_range=(10., 10.))},
+    commands={'stand': PedipulationCommandCfg(resampling_time_range=(10., 10.), debug_vis=play)},
     events=event_terms,
     rewards=reward_terms,
     terminations={

@@ -42,10 +42,10 @@ class PedipulationPPO(PPO):
     super().__init__(*args, **kwargs)
     if self.actor.is_recurrent or self.critic.is_recurrent:
       raise ValueError("PedipulationPPO requires the source feed-forward policy")
-    if self.actor.obs_dim != 45 or tuple(self.actor.obs_groups) != ("actor",):
-      raise ValueError("PedipulationPPO requires one 45-dimensional actor observation group")
-    if self.critic.obs_dim != 86:
-      raise ValueError("PedipulationPPO requires 86 critic observations")
+    if self.actor.obs_dim != 48 or tuple(self.actor.obs_groups) != ("actor",):
+      raise ValueError("PedipulationPPO requires one 48-dimensional actor observation group")
+    if self.critic.obs_dim != 89:
+      raise ValueError("PedipulationPPO requires 89 critic observations")
     if self.actor.obs_normalization or self.critic.obs_normalization:
       raise ValueError("The source stand policy does not normalize observations")
     if self.actor.distribution.output_dim != 12:

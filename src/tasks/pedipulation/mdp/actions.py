@@ -33,7 +33,7 @@ class PedipulationPositionAction(ActionTerm):
     self.kp_multipliers = torch.ones_like(self._raw_action)
     self.kd_multipliers = torch.ones_like(self._raw_action)
     self.dr_observation = torch.zeros(self.num_envs, 34, device=self.device)
-    self.actor_sample = torch.zeros(self.num_envs, 45, device=self.device)
+    self.actor_sample = torch.zeros(self.num_envs, 48, device=self.device)
     self.height_score = torch.tensor(0., device=self.device)
     self.delay_steps = torch.zeros(self.num_envs, 1, dtype=torch.long, device=self.device)
     self._substep = 0

@@ -35,9 +35,9 @@ def main():
   env = ManagerBasedRlEnv(cfg, device='cpu')
   try:
     obs, _ = env.reset()
-    assert obs['actor'].shape == (2, 45)
-    assert obs['critic'].shape == (2, 86)
-    torch.testing.assert_close(obs['critic'][:, 3:48], obs['actor'])
+    assert obs['actor'].shape == (2, 48)
+    assert obs['critic'].shape == (2, 89)
+    torch.testing.assert_close(obs['critic'][:, 3:51], obs['actor'])
     state = env.action_manager.get_term('joint_pos')
     robot = env.scene['robot']
     dr = state.dr_observation.clone()
@@ -54,7 +54,7 @@ def main():
       assert torch.isfinite(obs['actor']).all()
       assert torch.isfinite(obs['critic']).all()
       assert torch.isfinite(reward).all()
-      torch.testing.assert_close(obs['critic'][:, 3:48], obs['actor'])
+      torch.testing.assert_close(obs['critic'][:, 3:51], obs['actor'])
     env.episode_length_buf[:] = env.max_episode_length
     _, _, _, truncated, _ = env.step(torch.zeros(2, 12))
     assert truncated.all(), 'Source timeout boundary did not reset both worlds'
@@ -63,13 +63,13 @@ def main():
     # Reset one world without modifying the other world's command or frame.
     command = env.command_manager.get_term('stand')
     other_command = command.command[1].clone()
-    other_frame = command.frame.basis_w[1].clone()
+    other_frame = command.anchor_frame.basis_w[1].clone()
     env.reset(env_ids=torch.tensor([0]))
     torch.testing.assert_close(command.command[1], other_command)
-    torch.testing.assert_close(command.frame.basis_w[1], other_frame)
-    torch.testing.assert_close(command.frame.basis_w.transpose(1, 2) @ command.frame.basis_w,
+    torch.testing.assert_close(command.anchor_frame.basis_w[1], other_frame)
+    torch.testing.assert_close(command.anchor_frame.basis_w.transpose(1, 2) @ command.anchor_frame.basis_w,
       torch.eye(3).repeat(2, 1, 1), atol=1e-6, rtol=1e-6)
-    print(f'CPU rollout passed: 2 worlds, {args.steps} steps, 45/86 observations, timeout/reset')
+    print(f'CPU rollout passed: 2 worlds, {args.steps} steps, 48/89 observations, timeout/reset')
     if args.ppo:
       runner_cfg = pedipulation_ppo_runner_cfg()
       runner_cfg.logger = 'tensorboard'

@@ -5,7 +5,7 @@ import torch
 from mjlab.utils.lab_api.math import quat_apply
 
 
-class HeadingFrame:
+class AnchorFrame:
   def __init__(self, gravity_w, acquire=.15, release=.05, transition_rate=6.):
     if not 0 < release < acquire < 1 or transition_rate <= 0:
       raise ValueError('Require 0 < release < acquire < 1 and positive transition rate')
