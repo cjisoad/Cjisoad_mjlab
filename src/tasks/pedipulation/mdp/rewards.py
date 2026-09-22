@@ -81,7 +81,9 @@ def ang_xz(env):
 
 def default_pos_front(env):
   state = _state(env)
-  return (state.joint_pos[:, :6] - state.desired_angles[:6]).abs().sum(-1)
+  error = (state.joint_pos[:, :6] - state.desired_angles[:6]).abs()
+  no_target = ~env.command_manager.get_term('stand').has_foot_target
+  return error[:, :3].sum(-1) + error[:, 3:6].sum(-1) * no_target
 
 
 def default_pos_rear(env):
@@ -94,24 +96,32 @@ def default_pos_reward_FL(env):
   return torch.exp(-(state.joint_pos[:, :3] - state.desired_angles[:3]).abs().sum(-1)) * _gate(env)
 
 
-def default_pos_reward_FR(env, asset_cfg=RIGHT_FRONT):
+def default_pos_reward_FR(env):
   state = _state(env)
+  no_target = ~env.command_manager.get_term('stand').has_foot_target
+  return torch.exp(-(state.joint_pos[:, 3:6] - state.desired_angles[3:6]).abs().sum(-1)) * _gate(env) * no_target
+
+
+def FR_pos_track(env, asset_cfg=RIGHT_FRONT):
   term = env.command_manager.get_term('stand')
   position = env.scene[asset_cfg.name].data.site_pos_w[:, asset_cfg.site_ids].squeeze(1)
   error = (position - term.foot_target_pos_w).square().sum(-1)
-  target_reward = torch.exp(-error / term.cfg.foot_target_std ** 2)
-  posture_reward = torch.exp(-(state.joint_pos[:, 3:6] - state.desired_angles[3:6]).abs().sum(-1))
-  return torch.where(term.has_foot_target, target_reward, posture_reward) * _gate(env)
+  return torch.exp(-error / term.cfg.foot_target_std ** 2) * _gate(env) * term.has_foot_target
 
 
 def default_hip_pos(env):
-  return _state(env).joint_pos[:, ::3].abs().sum(-1)
+  hips = _state(env).joint_pos[:, ::3].abs()
+  no_target = ~env.command_manager.get_term('stand').has_foot_target
+  return hips[:, 0] + hips[:, 1] * no_target + hips[:, 2:].sum(-1)
 
 
 def symmetric_joints(env):
   joints = _state(env).joint_pos.reshape(env.num_envs, 4, 3).clone()
   joints[:, (1, 3), 0] *= -1
-  error = (joints[:, 0] - joints[:, 1]).abs().sum(-1) + (joints[:, 2] - joints[:, 3]).abs().sum(-1)
+  no_target = ~env.command_manager.get_term('stand').has_foot_target
+  front_error = (joints[:, 0] - joints[:, 1]).abs().sum(-1)
+  rear_error = (joints[:, 2] - joints[:, 3]).abs().sum(-1)
+  error = front_error * no_target + rear_error
   return error * _gate(env)
 
 

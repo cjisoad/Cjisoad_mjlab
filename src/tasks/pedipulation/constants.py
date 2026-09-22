@@ -18,5 +18,6 @@ REWARD_WEIGHTS = {
   'orientation_symmetry': -.5, 'feet_height_symmetry': -.2,
   'handstand_feet_height_exp': 5.,
   'default_pos_reward_FL': .5, 'default_pos_reward_FR': .5,
+  'FR_pos_track': 2.5,
   'dof_pos_limits': -2., 'alive': 1.,
 }

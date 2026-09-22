@@ -90,20 +90,55 @@ class FrontTargetTests(unittest.TestCase):
     target[3, 0] = .05
     term = SimpleNamespace(has_foot_target=torch.tensor([False, False, True, True]),
       foot_target_pos_w=target, cfg=SimpleNamespace(foot_target_std=.05))
-    env = SimpleNamespace(scene={'robot': SimpleNamespace(data=SimpleNamespace(site_pos_w=sites))},
+    env = SimpleNamespace(num_envs=4, scene={'robot': SimpleNamespace(data=SimpleNamespace(site_pos_w=sites))},
       command_manager=SimpleNamespace(get_term=lambda _: term),
       action_manager=SimpleNamespace(get_term=lambda _: state))
     return env
 
-  def test_reward_switch_and_height_gate(self):
+  def test_separate_posture_and_tracking_rewards_are_mutually_exclusive(self):
     from src.tasks.pedipulation.mdp import rewards
     asset = SimpleNamespace(name='robot', site_ids=[1])
     env = self.reward_env(.8)
-    expected = torch.tensor([1., np.exp(-.3), 1., np.exp(-1.)], dtype=torch.float32)
-    actual = rewards.default_pos_reward_FR(env, asset_cfg=asset)
-    torch.testing.assert_close(actual, expected)
-    env.action_manager.get_term('').height_score.fill_(.7)
-    torch.testing.assert_close(rewards.default_pos_reward_FR(env, asset_cfg=asset), torch.zeros(4))
+    posture = torch.tensor([1., np.exp(-.3), 0., 0.], dtype=torch.float32)
+    tracking = torch.tensor([0., 0., 1., np.exp(-1.)], dtype=torch.float32)
+    torch.testing.assert_close(rewards.default_pos_reward_FR(env), posture)
+    torch.testing.assert_close(rewards.FR_pos_track(env, asset_cfg=asset), tracking)
+    for height_score in (.7, .5):
+      env.action_manager.get_term('').height_score.fill_(height_score)
+      torch.testing.assert_close(rewards.default_pos_reward_FR(env), torch.zeros(4))
+      torch.testing.assert_close(rewards.FR_pos_track(env, asset_cfg=asset), torch.zeros(4))
+
+  def test_front_posture_and_hip_penalties_only_release_right_front(self):
+    from src.tasks.pedipulation.mdp import rewards
+    env = self.reward_env(.8)
+    state = env.action_manager.get_term('joint_pos')
+    state.joint_pos[:] = torch.tensor([1., 2., 3., -4., 5., 6., 7., 8., 9., -10., 11., 12.])
+    for height_score in (.8, .5):
+      state.height_score.fill_(height_score)
+      torch.testing.assert_close(rewards.default_pos_front(env), torch.tensor([21., 21., 6., 6.]))
+      torch.testing.assert_close(rewards.default_hip_pos(env), torch.tensor([22., 22., 18., 18.]))
+      torch.testing.assert_close(rewards.default_pos_rear(env), torch.full((4,), 57.))
+
+  def test_joint_symmetry_keeps_rear_penalty_and_existing_height_gate(self):
+    from src.tasks.pedipulation.mdp.rewards import symmetric_joints
+    env = self.reward_env(.8)
+    state = env.action_manager.get_term('joint_pos')
+    state.joint_pos[:] = torch.tensor([1., 2., 3., -4., 5., 6., 7., 8., 9., -10., 11., 12.])
+    torch.testing.assert_close(symmetric_joints(env), torch.tensor([18., 18., 9., 9.]))
+    state.height_score.fill_(.7)
+    torch.testing.assert_close(symmetric_joints(env), torch.zeros(4))
+
+  def test_tracking_reward_configuration_uses_current_height_gate(self):
+    from src.tasks.pedipulation.env_cfg import pedipulation_env_cfg
+    for play in (False, True):
+      cfg = pedipulation_env_cfg(play=play)
+      self.assertIn('FR_pos_track', cfg.rewards)
+      self.assertEqual(cfg.rewards['FR_pos_track'].weight, 2.5)
+      self.assertEqual(cfg.rewards['default_pos_reward_FR'].weight, .5)
+      self.assertEqual(cfg.rewards['default_pos_reward_FR'].params, {})
+      self.assertEqual(cfg.rewards['FR_pos_track'].params['asset_cfg'].site_names, ('FR',))
+      names = list(cfg.rewards)
+      self.assertLess(names.index('base_height'), names.index('FR_pos_track'))
 
   def test_height_difference_penalty_truth_table(self):
     from src.tasks.pedipulation.mdp.rewards import feet_height_symmetry

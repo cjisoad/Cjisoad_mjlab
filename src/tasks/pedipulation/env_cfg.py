@@ -28,11 +28,12 @@ def _contact_sensor(name, bodies):
 
 def pedipulation_env_cfg(play=False):
   reward_terms = {}
-  for name, weight in sorted(REWARD_WEIGHTS.items()):
+  # Case-insensitive order keeps FR_pos_track after the current base_height gate.
+  for name, weight in sorted(REWARD_WEIGHTS.items(), key=lambda item: item[0].lower()):
     params = {}
     if name == 'handstand_feet_height_exp':
       params['asset_cfg'] = SceneEntityCfg('robot', site_names=('stand_goal',), preserve_order=True)
-    elif name == 'default_pos_reward_FR':
+    elif name == 'FR_pos_track':
       params['asset_cfg'] = SceneEntityCfg('robot', site_names=('FR',), preserve_order=True)
     elif name == 'feet_height_symmetry':
       params['asset_cfg'] = SceneEntityCfg('robot', site_names=('FL', 'FR'), preserve_order=True)

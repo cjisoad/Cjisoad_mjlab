@@ -113,21 +113,31 @@ regardless of pitch/roll. Reachability is a kinematic guarantee in the reference
 upright pose, not under arbitrary body tilt; it is not a dynamic balance or
 collision-free trajectory guarantee.
 
-The Cartesian tracking reward is:
+The right-front posture and Cartesian tracking rewards are separate terms:
 
 ```
 gate = mean(exp(-5 * abs(base_height - .52))) > .70
 active = any([dx, dy, dz] != 0)
-r_FR = gate * (exp(-||p_FR_W - p_target_W||^2 / .05^2) if active
-               else exp(-sum(abs(q_FR - desired_angles_FR))))
+default_pos_reward_FR = gate * (not active) * exp(-sum(abs(q_FR - desired_angles_FR)))
+FR_pos_track = gate * active * exp(-||p_FR_W - p_target_W||^2 / .05^2)
 front_height_penalty = abs(z_FL - z_FR) * ((not active) or (not gate))
 ```
 
-`default_pos_reward_FR` retains weight .5. `feet_height_symmetry` retains weight
--.2. The existing source-compatible height gate is batch-wide, not a per-robot
-height threshold, and is identical to the velocity reward gate. Other posture
-penalties, including `default_pos_front` and `symmetric_joints`, remain in place
-and can still discourage large asymmetric reaches. PPO mirror regularization
+`default_pos_reward_FR` retains weight .5; `FR_pos_track` has weight 2.5, matching
+each velocity tracking reward and five times the previous Cartesian weight.
+They produce separate episode reward metrics. `feet_height_symmetry` retains
+weight -.2. The existing source-compatible height gate is batch-wide, not a
+per-robot height threshold, and is identical to the velocity reward gate.
+Reward names are sorted case-insensitively so `base_height` updates the gate
+before `FR_pos_track`, without changing the order of existing terms.
+
+When a foot target is active, `default_pos_front` excludes the FR joints and
+`default_hip_pos` excludes the FR hip. The FL and rear-leg penalties remain.
+These two exclusions do not depend on the height gate. `symmetric_joints`
+excludes front-leg asymmetry when a target is active but retains rear-leg
+symmetry and its original height gate. All three penalty weights stay at -.1.
+The gates use the presence of the position target, not the base velocity command.
+PPO mirror regularization
 is applied only to samples without FR targets because this right-only task has
 no left-side target command to represent its reflection. It remains fully
 differentiable and returns zero for an all-target minibatch.

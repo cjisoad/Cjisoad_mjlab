@@ -165,7 +165,8 @@ class PedipulationTaskTests(unittest.TestCase):
       desired_angles=torch.arange(12, dtype=torch.float32),
       height_score=torch.tensor(.8),
     )
-    env = SimpleNamespace(action_manager=SimpleNamespace(get_term=lambda _: state))
+    env = SimpleNamespace(action_manager=SimpleNamespace(get_term=lambda _: state),
+      command_manager=SimpleNamespace(get_term=lambda _: SimpleNamespace(has_foot_target=torch.tensor([False]))))
     torch.testing.assert_close(rewards.default_pos_front(env), torch.tensor([15.]))
     torch.testing.assert_close(rewards.default_pos_rear(env), torch.tensor([51.]))
     torch.testing.assert_close(rewards.default_pos_reward_FL(env), torch.exp(torch.tensor([-3.])))
@@ -176,7 +177,7 @@ class PedipulationTaskTests(unittest.TestCase):
     self.assertIn('Pedipulation', list_tasks())
     self.assertIn('Unitree-Go2-RearStand', list_tasks())
     cfg = load_env_cfg('Pedipulation')
-    self.assertEqual(len(cfg.rewards), 25)
+    self.assertEqual(len(cfg.rewards), 26)
     self.assertEqual(cfg.rewards['lin_vel_z'].weight, .3)
     self.assertEqual(load_env_cfg('Unitree-Go2-RearStand').rewards['lin_vel_z'].weight, .2)
     self.assertEqual(cfg.rewards['default_pos_front'].weight, -.1)
