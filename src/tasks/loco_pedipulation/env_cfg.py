@@ -35,7 +35,8 @@ def loco_pedipulation_env_cfg(play=False):
     'robot', site_names=('FL', 'FR', 'RL', 'RR'), preserve_order=True)
   cfg.rewards['pose'].func = rewards.mode_posture
   for name, func, weight, params in (
-    ('track_linear_velocity', rewards.track_linear_velocity, 1., {}),
+    ('track_linear_velocity', rewards.track_linear_velocity, 1.,
+      {'std': .5, 'tripod_std': .15, 'tripod_weight': 2.}),
     ('track_angular_velocity', rewards.track_angular_velocity, 1., {}),
     ('stand_still', rewards.stand_still, -1., {}),
     ('foot_gait', rewards.feet_gait, .5, {}),

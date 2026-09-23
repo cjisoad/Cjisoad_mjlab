@@ -75,6 +75,12 @@ def main():
         runner = LocoPedipulationOnPolicyRunner(wrapped, asdict(agent_cfg), directory, args.device)
         term.stage = 2
         runner.learn(1, init_at_random_ep_len=False)
+        runner.logger.writer.flush()
+        from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+        events = EventAccumulator(directory).Reload()
+        for tag in ('landing_attempts_total', 'landing_confirmed_total',
+                    'tripod_stationary_samples', 'tripod_moving_samples'):
+          assert f'Metrics/twist/{tag}' in events.Tags()['scalars'], tag
         checkpoint = Path(directory) / f'model_{runner.current_learning_iteration}.pt'
         assert checkpoint.exists()
         with torch.no_grad():
@@ -86,6 +92,7 @@ def main():
         restored = LocoPedipulationOnPolicyRunner(wrapped, asdict(agent_cfg), device=args.device)
         restored.load(str(checkpoint), map_location=args.device)
         assert term.stage == 2, 'Curriculum stage was not restored'
+        torch.testing.assert_close(restored.logger.landing_totals[0], runner.logger.landing_totals[0])
         with torch.no_grad():
           torch.testing.assert_close(restored.get_inference_policy()(sample), expected)
         import onnx

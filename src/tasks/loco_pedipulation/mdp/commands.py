@@ -9,6 +9,7 @@ from mjlab.managers.command_manager import CommandTerm, CommandTermCfg
 
 from .anchor_frame import anchor_basis, to_anchor
 from .foot_workspace import FOOT_NAMES, FR_JOINTS, build_foot_workspace
+from .metrics import ManipulationMetrics
 
 QUAD, PREPARE, REACH, HOLD, LOWER, RECOVER = range(6)
 
@@ -99,6 +100,7 @@ class LocoPedipulationCommand(CommandTerm):
     # Quad count/error, hold count/position error/contact/velocity error,
     # total steps, failed episodes, landing attempts/successes.
     self.stats = torch.zeros(self.num_envs, 10, device=self.device)
+    self.training_metrics = ManipulationMetrics(self.device)
     self._last_recorded_step = -1
     self._gui = None
 
@@ -140,11 +142,14 @@ class LocoPedipulationCommand(CommandTerm):
 
   def reset(self, env_ids):
     extras = {}
+    lower = self.phase[env_ids] == LOWER
+    timed_out = lower & (self.elapsed[env_ids] > self.cfg.reach_time + self.cfg.landing_timeout)
+    self.training_metrics.landing_event('timeouts', timed_out)
+    self.training_metrics.landing_event('interrupted', lower & ~timed_out)
     stats = self.stats[env_ids].sum(0)
     for key, numerator, denominator in (
       ('quad_velocity_error', 1, 0), ('fr_position_error', 3, 2),
       ('fr_contact_fraction', 4, 2), ('tripod_velocity_error', 5, 2),
-      ('landing_success', 9, 8),
     ):
       extras[key] = (stats[numerator] / stats[denominator].clamp_min(1)).item()
     self.stats[env_ids] = 0.
@@ -232,6 +237,7 @@ class LocoPedipulationCommand(CommandTerm):
     self.stats[:, 5] += error * hold
     self.stats[:, 6] += 1.
     self.stats[:, 7] += self._env.termination_manager.terminated
+    self.training_metrics.record_tracking(hold, self.command, velocity, angular)
 
   def _update_command(self):
     self.initialize_reference()
@@ -246,10 +252,12 @@ class LocoPedipulationCommand(CommandTerm):
     height = (self.robot.data.root_link_pos_w * self.basis_w[:, :, 2]).sum(-1)
     landing[:, 2] = self.workspace.foot_radius - height
     self.stats[:, 8] += begin_lower
+    self.training_metrics.landing_event('attempts', begin_lower)
     self._begin(begin_lower, LOWER, landing)
     begin_reach = (((self.phase == PREPARE) & (self.elapsed >= self.cfg.prepare_time))
       | (((self.phase == LOWER) | (self.phase == RECOVER)) & self.enabled)
       | (((self.phase == REACH) | (self.phase == HOLD)) & self.enabled & self._target_changed))
+    self.training_metrics.landing_event('interrupted', begin_reach & (self.phase == LOWER))
     self._begin(begin_reach, REACH, self.zero + self.requested_offset)
     self._target_changed.zero_()
 
@@ -265,6 +273,7 @@ class LocoPedipulationCommand(CommandTerm):
     self.contact_time = torch.where(landed, self.contact_time + dt, 0.)
     confirmed = lower & (self.elapsed >= self.cfg.reach_time) & (self.contact_time >= self.cfg.contact_confirmation)
     self.stats[:, 9] += confirmed
+    self.training_metrics.landing_event('confirmed', confirmed)
     self._begin(confirmed, RECOVER)
     recover = self.phase == RECOVER
     self.blend[recover] = (self._blend_start * (1. - smoothstep(self.elapsed / self.cfg.recover_time)))[recover]

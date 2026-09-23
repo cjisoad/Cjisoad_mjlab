@@ -83,6 +83,17 @@ randomization, general stability costs and PPO settings. FR control adds:
 - Relaxed posture of the other legs so the body can shift to balance.
 - A 1.2 s tripod gait with 0.8 stance fraction and sequential FL/RR/RL swings.
 
+During tripod translation (horizontal command norm above 0.05 m/s), linear
+tracking uses a tighter horizontal kernel, `tripod_std=0.15` m/s, and a maximum
+of `tripod_weight=2.0`, blended with the original term by manipulation blend.
+Both are parameters of `rewards.track_linear_velocity`. Four-leg locomotion,
+stationary tripod control and pure yaw commands keep the original horizontal
+kernel (`std=0.5`, maximum 1). The vertical damping factor remains
+`exp(-2 * vz^2 / 0.5^2)`; angular tracking and FR rewards are unchanged.
+For a 0.2 m/s forward command and zero vertical velocity, standing still now
+earns 0.338 instead of 0.852; accurate tripod tracking earns 2 instead of 1.
+This improves the reward incentive to move, but requires further training.
+
 The four-leg gait uses the original 0.6 s diagonal timing. Stationary modes do
 not impose a stepping gait. Tripod walking permits support-leg swing and thus
 temporary two-foot support. A strong penalty for non-foot ground contact and
@@ -113,10 +124,30 @@ rate error. Failed windows are discarded so early exploration does not
 permanently dilute later success. Thresholds are initial training settings,
 not measured policy performance.
 
-Useful logs include `Curriculum/manipulation/stage`,
-`Metrics/twist/quad_velocity_error`, `fr_position_error`, `fr_contact_fraction`,
-`tripod_velocity_error`, and `landing_success`. Command metrics are conditioned
-on the relevant mode and return zero when that mode has no samples.
+Useful logs include `Curriculum/manipulation/stage` and the following under
+`Metrics/twist/`:
+
+- `landing_attempts_total`, `landing_confirmed_total`, `landing_timeouts_total`
+  and `landing_interrupted_total`: cumulative event counts. Interruptions include
+  reenabling during LOWER or resetting before contact confirmation.
+- `landing_pending`: started attempts not yet confirmed, timed out or interrupted.
+- `landing_success`: cumulative confirmed / started attempts, including pending
+  attempts in the denominator. It is omitted until the first attempt. It is
+  no longer the mean of per-reset-batch ratios; old runs are not directly comparable.
+- `tripod_stationary_velocity_error` and `tripod_moving_velocity_error`: HOLD
+  tracking error, summed over samples and divided by sample count per PPO iteration.
+  Moving means command `[vx, vy, wz]` norm above 0.05, matching the gait gate.
+- Each stationary/moving prefix also has `samples`, `linear_error`, `yaw_error`,
+  `actual_vx`, `command_vx`, `actual_speed` and `command_speed`. Speed is horizontal
+  velocity norm. Empty groups report zero samples and omit means, not zero error.
+
+The task runner writes these metrics directly, bypassing episode-ratio averaging,
+and sums counts across training ranks before taking ratios. Landing totals are
+checkpointed; pending attempts become interruptions on resume because simulation
+state is reset. Older checkpoints start the new counters at zero.
+Existing `quad_velocity_error`, `fr_position_error`, `fr_contact_fraction` and
+`tripod_velocity_error` retain their legacy per-reset-batch averaging behavior.
+Curriculum thresholds and its separate episode statistics are unchanged.
 
 ## Run
 

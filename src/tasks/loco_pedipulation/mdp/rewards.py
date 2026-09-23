@@ -12,11 +12,16 @@ def _term(env):
   return env.command_manager.get_term('twist')
 
 
-def track_linear_velocity(env, std=.5):
+def track_linear_velocity(env, std=.5, tripod_std=.15, tripod_weight=2.):
   term = _term(env)
   actual = to_anchor(term.basis_w, env.scene['robot'].data.root_link_lin_vel_w)
-  error = (term.command[:, :2] - actual[:, :2]).square().sum(-1) + 2. * actual[:, 2].square()
-  return torch.exp(-error / std**2)
+  error = (term.command[:, :2] - actual[:, :2]).square().sum(-1)
+  quad = torch.exp(-error / std**2)
+  tripod = tripod_weight * torch.exp(-error / tripod_std**2)
+  moving = term.command[:, :2].norm(dim=-1) > .05
+  # Tighten horizontal tracking only; retain the original vertical damping.
+  horizontal = torch.lerp(quad, tripod, term.blend * moving)
+  return horizontal * torch.exp(-2. * actual[:, 2].square() / std**2)
 
 
 def track_angular_velocity(env, std=.70710678):

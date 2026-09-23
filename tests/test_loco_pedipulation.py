@@ -20,6 +20,8 @@ from src.tasks.loco_pedipulation.mdp.curriculums import manipulation_curriculum
 from src.tasks.loco_pedipulation.mdp.foot_workspace import FOOT_NAMES, FR_JOINTS, build_foot_workspace
 from src.tasks.loco_pedipulation.mdp.observations import foot_control_state
 from src.tasks.loco_pedipulation.mdp import rewards
+from src.tasks.loco_pedipulation.mdp.metrics import ManipulationMetrics
+from src.tasks.loco_pedipulation.rl.metrics import ManipulationLogger
 
 
 def make_env(count=4):
@@ -213,6 +215,92 @@ class LocoPedipulationTests(unittest.TestCase):
     first = rewards.feet_gait(env)
     env.scene['feet_ground_contact'].data.force[:, 1] = 0.
     torch.testing.assert_close(rewards.feet_gait(env), first)
+
+  def test_moving_tripod_reward_distinguishes_stalling_from_tracking(self):
+    env, term = make_env()
+    term.blend[:] = torch.tensor((0., 1., 1., 1.))
+    term._command[:, 0] = .2
+    env.scene['robot'].data.root_link_lin_vel_w[:, 0] = torch.tensor((0., 0., .1, .2))
+    actual = rewards.track_linear_velocity(env)
+    torch.testing.assert_close(actual, torch.tensor((.8521438, .3380266, 1.2823608, 2.)))
+    self.assertGreater(float(actual[3] - actual[1]), 1.6)
+    # Stationary tripod and pure yaw commands keep the original linear reward.
+    term._command[:, 0] = 0.
+    term._command[1, 2] = .2
+    robot = env.scene['robot'].data
+    robot.root_link_lin_vel_w[:, 2] = .1
+    expected = torch.exp(-(robot.root_link_lin_vel_w[:, :2].square().sum(-1)
+                           + 2. * robot.root_link_lin_vel_w[:, 2].square()) / .5**2)
+    torch.testing.assert_close(rewards.track_linear_velocity(env), expected)
+
+  def test_moving_reward_blends_and_keeps_vertical_damping(self):
+    env, term = make_env()
+    term._command[:, 0] = .2
+    term.blend[:] = torch.tensor((0., .5, 1., 1.))
+    base = rewards.track_linear_velocity(env)
+    torch.testing.assert_close(base[1], (base[0] + base[2]) / 2.)
+    env.scene['robot'].data.root_link_lin_vel_w[:, 2] = .1
+    torch.testing.assert_close(rewards.track_linear_velocity(env) / base,
+                               torch.full((4,), np.exp(-2. * .1**2 / .5**2)))
+
+  def test_landing_logging_survives_resets_and_counts_interruptions(self):
+    env, term = make_env()
+    term.set_command([0, 1, 2], fr_enabled=True)
+    advance(env, term, 60)
+    term.set_command([0, 1, 2], fr_enabled=False)
+    env.scene['feet_ground_contact'].data.force[1:3, 1] = 0.
+    advance(env, term, 40)
+    term.set_command([1], fr_enabled=True)
+    advance(env, term, 1)
+    advance(env, term, 100)
+    self.assertTrue(rewards.landing_failed(env)[2])
+    term.reset(torch.tensor([0, 1, 2]))
+    self.assertNotIn('landing_success', term.reset(torch.tensor([3])))
+    torch.testing.assert_close(term.training_metrics.landing,
+                               torch.tensor((3., 1., 1., 1.), dtype=torch.float64))
+    self.assertEqual(float(term.stats[:, 8:].sum()), 0.)
+
+  def test_logger_weights_samples_and_does_not_insert_missing_ratios(self):
+    recorded = {}
+    writer = SimpleNamespace(add_scalar=lambda key, value, step: recorded.__setitem__((key, step), value))
+    base = SimpleNamespace(writer=writer, log=lambda **kw: None)
+    metrics = ManipulationMetrics('cpu')
+    logger = ManipulationLogger(base, metrics)
+    command = torch.tensor(((0., 0., 0.), (.2, 0., 0.), (.2, 0., 0.)))
+    velocity = torch.tensor(((0., 0., 0.), (0., 0., 0.), (.2, 0., 0.)))
+    hold = torch.ones(3, dtype=torch.bool)
+    angular = torch.zeros(3, 3)
+    metrics.record_tracking(hold, command, velocity, angular)
+    metrics.record_tracking(torch.tensor((False, True, False)), command, velocity, angular)
+    metrics.landing_event('attempts', torch.ones(9, dtype=torch.bool))
+    metrics.landing_event('confirmed', torch.tensor((True,)))
+    logger.log(it=0)
+    prefix = 'Metrics/twist/'
+    self.assertAlmostEqual(recorded[(prefix + 'tripod_moving_velocity_error', 0)], .4 / 3, places=6)
+    self.assertEqual(recorded[(prefix + 'tripod_moving_samples', 0)], 3)
+    self.assertEqual(recorded[(prefix + 'tripod_stationary_samples', 0)], 1)
+    self.assertAlmostEqual(recorded[(prefix + 'tripod_moving_actual_vx', 0)], .2 / 3, places=6)
+    metrics.landing_event('attempts', torch.tensor((True,)))
+    metrics.landing_event('confirmed', torch.tensor((True,)))
+    logger.log(it=1)
+    self.assertEqual(recorded[(prefix + 'landing_attempts_total', 1)], 10)
+    self.assertEqual(recorded[(prefix + 'landing_success', 1)], .2)
+    self.assertEqual(recorded[(prefix + 'landing_pending', 1)], 8)
+    self.assertNotIn((prefix + 'tripod_moving_velocity_error', 1), recorded)
+    restored = ManipulationLogger(base, ManipulationMetrics('cpu'))
+    restored.restore_counts(logger.landing_totals)
+    restored.log(it=2)
+    self.assertEqual(recorded[(prefix + 'landing_interrupted_total', 2)], 8)
+    self.assertEqual(recorded[(prefix + 'landing_pending', 2)], 0)
+
+  def test_tracking_is_recorded_once_and_ignores_non_hold_phases(self):
+    env, term = make_env()
+    term.phase[:] = torch.tensor((HOLD, HOLD, QUAD, LOWER))
+    term._command[1:, 0] = .2
+    term.record_outcomes()
+    term.record_outcomes()
+    torch.testing.assert_close(term.training_metrics.tracking[:, 0],
+                               torch.ones(2, dtype=torch.float64))
 
   def test_curriculum_needs_success_not_elapsed_time(self):
     env, term = make_env()
