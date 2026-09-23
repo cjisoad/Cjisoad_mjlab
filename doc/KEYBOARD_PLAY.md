@@ -23,12 +23,15 @@ one robot and the policy running on CUDA. Click the window to enable input.
 
 Movement ramps at 1 m/s^2 and 2 rad/s^2. Releasing its keys sets the corresponding
 velocity to zero immediately. Opposing keys cancel. Switching to another window
-also clears movement. Foot offsets change at 4 cm/s and remain at their current
+also clears movement. Foot offsets change at 12 cm/s and remain at their current
 values when keys are released or the window loses focus. While paused, movement
 is zero and offsets do not change. Mouse camera controls remain available.
 
 The status overlay shows commanded velocity, target offsets, measured target
 error, input focus and simulation step. A green sphere marks an active target.
+
+Controller keys are reserved in the playback window and do not trigger MuJoCo's
+scene/display shortcuts. Mouse camera controls and Space remain available.
 
 Offsets use the training gravity-aligned anchor frame attached to the base:
 X is forward, Y is left, Z is upward. This is independent of the viewing camera.

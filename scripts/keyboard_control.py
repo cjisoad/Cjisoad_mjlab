@@ -8,7 +8,7 @@ class KeyboardController:
   min_z_offset: float = -.10
   linear_acceleration: float = 1.
   yaw_acceleration: float = 2.
-  target_rate: float = .04
+  target_rate: float = .12
   _values: list[float] = field(default_factory=lambda: [0.] * 6, init=False)
 
   @property

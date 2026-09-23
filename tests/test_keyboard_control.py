@@ -42,7 +42,7 @@ class KeyboardControlTests(unittest.TestCase):
       with self.subTest(key=key):
         c = self.controller()
         c.update({key}, .1)
-        self.assertAlmostEqual(c.command[axis], sign * .004)
+        self.assertAlmostEqual(c.command[axis], sign * .012)
         saved = c.command
         c.update(set(), .1)
         self.assertEqual(c.command, saved)

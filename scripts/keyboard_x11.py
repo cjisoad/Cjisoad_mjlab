@@ -60,6 +60,10 @@ class X11Keyboard:
                               C.POINTER(ulong), C.POINTER(ptr)], integer),
       'XFree': ([ptr], integer),
       'XSync': ([ptr, integer], integer),
+      'XGrabKey': ([ptr, integer, C.c_uint, ulong, integer, integer, integer], integer),
+      'XUngrabKey': ([ptr, integer, C.c_uint, ulong], integer),
+      'XPending': ([ptr], integer),
+      'XNextEvent': ([ptr, ptr], integer),
       'XSetErrorHandler': ([_XErrorHandler], _XErrorHandler),
     }
     for name, (args, result) in signatures.items():
@@ -75,9 +79,31 @@ class X11Keyboard:
     self.keycodes = {name: self.lib.XKeysymToKeycode(
       self.display, self.lib.XStringToKeysym(symbol.encode())) for name, symbol in self.KEYS.items()}
     self.focused = False
+    self._focus_window = 0
+    self._grab_window = 0
+
+  def _set_grab_window(self, window):
+    if window == self._grab_window:
+      return
+    if self._grab_window:
+      for code in set(self.keycodes.values()) - {0}:
+        self.lib.XUngrabKey(self.display, code, 1 << 15, self._grab_window)
+    self._grab_window = window
+    if window:
+      # Passive grabs consume controller keys before GLFW/MuJoCo's built-in
+      # shortcuts. Polling XQueryKeymap still provides held-key state.
+      for code in set(self.keycodes.values()) - {0}:
+        self.lib.XGrabKey(self.display, code, 1 << 15, window, 0, 1, 1)
+    self.lib.XSync(self.display, 0)
+
+  def _discard_key_events(self):
+    event = (C.c_long * 24)()  # XEvent's ABI reserves 24 longs.
+    while self.lib.XPending(self.display):
+      self.lib.XNextEvent(self.display, C.byref(event))
 
   def _owns_focus(self):
     self._x_error = 0
+    self._focus_window = 0
     window, revert = C.c_ulong(), C.c_int()
     self.lib.XGetInputFocus(self.display, C.byref(window), C.byref(revert))
     # Toolkits may focus a child window while _NET_WM_PID is on its parent.
@@ -97,7 +123,10 @@ class X11Keyboard:
         return False
       try:
         if status == 0 and fmt.value == 32 and count.value and data:
-          return C.cast(data, C.POINTER(C.c_ulong))[0] == os.getpid()
+          owned = C.cast(data, C.POINTER(C.c_ulong))[0] == os.getpid()
+          if owned:
+            self._focus_window = window.value
+          return owned
       finally:
         if data:
           self.lib.XFree(data)
@@ -119,6 +148,8 @@ class X11Keyboard:
 
   def read(self):
     self.focused = self._owns_focus()
+    self._set_grab_window(self._focus_window if self.focused else 0)
+    self._discard_key_events()
     if not self.focused:
       return set()
     bitmap = (C.c_ubyte * 32)()
@@ -128,6 +159,7 @@ class X11Keyboard:
 
   def close(self):
     if self.display:
+      self._set_grab_window(0)
       self.lib.XSync(self.display, 0)
       self.lib.XSetErrorHandler(self._old_error_handler)
       global _active_keyboard
