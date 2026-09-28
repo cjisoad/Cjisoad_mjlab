@@ -18,7 +18,7 @@ from src.tasks.loco_pedipulation.mdp.commands import (
 )
 from src.tasks.loco_pedipulation.mdp.curriculums import manipulation_curriculum
 from src.tasks.loco_pedipulation.mdp.foot_workspace import FOOT_NAMES, FR_JOINTS, build_foot_workspace
-from src.tasks.loco_pedipulation.mdp.observations import foot_control_state
+from src.tasks.loco_pedipulation.mdp.observations import foot_control_state, policy_state
 from src.tasks.loco_pedipulation.mdp import rewards
 from src.tasks.loco_pedipulation.mdp.metrics import ManipulationMetrics
 from src.tasks.loco_pedipulation.rl.metrics import ManipulationLogger
@@ -32,7 +32,8 @@ def make_env(count=4):
     root_link_pos_w=root, root_link_quat_w=torch.tensor((1., 0., 0., 0.)).repeat(count, 1),
     gravity_vec_w=torch.tensor((0., 0., -1.)).repeat(count, 1), site_pos_w=sites.clone(),
     root_link_lin_vel_w=torch.zeros(count, 3), root_link_ang_vel_w=torch.zeros(count, 3),
-    joint_pos=torch.zeros(count, 12), default_joint_pos=torch.zeros(count, 12),
+    root_link_ang_vel_b=torch.zeros(count, 3), projected_gravity_b=torch.tensor((0., 0., -1.)).repeat(count, 1),
+    joint_pos=torch.zeros(count, 12), joint_vel=torch.zeros(count, 12), default_joint_pos=torch.zeros(count, 12),
     site_lin_vel_w=torch.zeros(count, 4, 3))
   robot = SimpleNamespace(data=data,
     find_sites=lambda names, **kw: (list(range(4)), list(FOOT_NAMES)),
@@ -45,9 +46,12 @@ def make_env(count=4):
     termination_manager=SimpleNamespace(terminated=torch.zeros(count, dtype=torch.bool)))
   cfg = LocoPedipulationCommandCfg(initial_stage=3, resampling_time_range=(100., 100.))
   term = LocoPedipulationCommand(cfg, env)
+  action = SimpleNamespace(joint_pos=data.joint_pos, joint_vel=data.joint_vel,
+    target_ids=torch.arange(12), default_angles=data.default_joint_pos, raw_action=torch.zeros(count, 12), actor_sample=None)
+  env.action_manager = SimpleNamespace(get_term=lambda name: action)
   env.command_manager = SimpleNamespace(get_term=lambda name: term, get_command=lambda name: term.command)
   term.reset(torch.arange(count))
-  term.set_command(torch.arange(count), velocity=(0., 0., 0.), fr_enabled=False)
+  term.set_command(torch.arange(count), velocity=(0., 0., 0.), target_offset=(0., 0., 0.))
   term.initialize_reference()
   return env, term
 
@@ -59,6 +63,63 @@ def advance(env, term, steps):
 
 
 class LocoPedipulationTests(unittest.TestCase):
+  def test_command_is_six_dimensional_and_target_zero_controls_activation(self):
+    env, term = make_env()
+    self.assertEqual(term.command.shape, (4, 6))
+    term.set_command([0], velocity=(.2, -.1, .3), target_offset=(.03, 0., .07))
+    advance(env, term, 25)
+    torch.testing.assert_close(term.command[0, :3], torch.tensor((.2, -.1, .3)))
+    self.assertTrue(term.enabled[0])
+    self.assertTrue((term.command[0, 3:] != 0).any())
+    term.set_command([0], target_offset=(0., 0., 0.))
+    self.assertFalse(term.enabled[0])
+    torch.testing.assert_close(term.command[0, 3:], torch.zeros(3))
+
+  def test_actor_observation_matches_pedipulation_48_value_abi(self):
+    env, term = make_env()
+    robot, action = env.scene['robot'].data, env.action_manager.get_term('joint_pos')
+    robot.root_link_ang_vel_b[:] = torch.tensor((1., 2., 3.))
+    robot.projected_gravity_b[:] = torch.tensor((.1, .2, -.9))
+    action.joint_pos[:] = torch.arange(12.)
+    action.joint_vel[:] = torch.arange(12.) + 1
+    action.raw_action[:] = torch.arange(12.) - 2
+    term.set_command(torch.arange(4), velocity=(.2, -.1, .4), target_offset=(.03, 0., .07))
+    actual = policy_state(env, add_noise=False)
+    expected = torch.cat((robot.root_link_ang_vel_b * .25, robot.projected_gravity_b,
+      term.command * torch.tensor((2., 2., .25, 1., 1., 1.)),
+      action.joint_pos - action.default_angles, action.joint_vel * .05, action.raw_action), dim=-1)
+    self.assertEqual(actual.shape, (4, 48))
+    torch.testing.assert_close(actual, expected)
+
+  def test_policy_ignores_internal_state_and_shares_noise_with_critic(self):
+    from src.tasks.loco_pedipulation.mdp.observations import shared_policy_state
+    env, term = make_env()
+    first = policy_state(env, add_noise=False).clone()
+    term.phase[:] = HOLD
+    term.blend[:] = 1.
+    term.reference[:] += .3
+    term.gait_phase[:] = .5
+    torch.testing.assert_close(policy_state(env, add_noise=False), first)
+    noisy = policy_state(env)
+    self.assertIs(shared_policy_state(env), noisy)
+    limits = torch.tensor((.05,) * 6 + (0.,) * 6 + (.01,) * 12 + (.075,) * 12 + (0.,) * 12)
+    self.assertTrue(((noisy - first).abs() <= limits + 1e-6).all())
+    cfg = loco_pedipulation_env_cfg()
+    self.assertEqual(tuple(cfg.observations['actor'].terms), ('policy',))
+    from src.tasks.loco_pedipulation.rl import loco_pedipulation_ppo_runner_cfg
+    self.assertFalse(loco_pedipulation_ppo_runner_cfg().actor.obs_normalization)
+
+  def test_target_does_not_count_as_motion_in_rewards_or_metrics(self):
+    env, term = make_env()
+    term.set_command([0], target_offset=(0., 0., .1))
+    self.assertEqual(float(rewards.feet_gait(env)[0]), 0.)
+    self.assertEqual(float(rewards.support_contact(env)[0]), 1.)
+    term.phase[0] = HOLD
+    term.record_outcomes()
+    self.assertEqual(float(term.training_metrics.tracking[0, 0]), 1.)
+    self.assertEqual(float(term.training_metrics.tracking[1, 0]), 0.)
+
+
   def test_anchor_follows_heading_and_stays_horizontal_under_tilt(self):
     roll, pitch, yaw = (torch.tensor(values) for values in
       ((0., .3, -.4), (0., .5, -.2), (0., 1., -2.)))
@@ -89,7 +150,7 @@ class LocoPedipulationTests(unittest.TestCase):
 
   def test_full_transition_requires_landing_contact_and_is_continuous(self):
     env, term = make_env()
-    term.set_command([0], fr_enabled=True, target_offset=(0., 0., .07))
+    term.set_command([0], target_offset=(0., 0., .07))
     previous = term.reference[0].clone()
     for _ in range(60):
       advance(env, term, 1)
@@ -99,7 +160,7 @@ class LocoPedipulationTests(unittest.TestCase):
     self.assertEqual(term.blend[0], 1.)
     torch.testing.assert_close(term.reference[0], term.zero + term.requested_offset[0])
     self.assertTrue((term.phase[1:] == QUAD).all())
-    term.set_command([0], fr_enabled=False)
+    term.set_command([0], target_offset=(0., 0., 0.))
     env.scene['feet_ground_contact'].data.force[0, 1] = 0.
     advance(env, term, 45)
     self.assertEqual(term.phase[0], LOWER)
@@ -115,24 +176,24 @@ class LocoPedipulationTests(unittest.TestCase):
 
   def test_cancel_retarget_and_reenable_during_transition(self):
     env, term = make_env()
-    term.set_command([0], fr_enabled=True)
+    term.set_command([0], target_offset=(0., 0., .07))
     advance(env, term, 1)
     self.assertEqual(term.phase[0], PREPARE)
-    term.set_command([0], fr_enabled=False)
+    term.set_command([0], target_offset=(0., 0., 0.))
     advance(env, term, 20)
     self.assertEqual(term.phase[0], QUAD)
-    term.set_command([0], fr_enabled=True)
+    term.set_command([0], target_offset=(0., 0., .07))
     advance(env, term, 60)
     before = term.reference[0].clone()
     term.set_command([0], target_offset=(.08, -.05, .12))
     advance(env, term, 1)
     self.assertEqual(term.phase[0], REACH)
     torch.testing.assert_close(term.reference[0], before)
-    term.set_command([0], fr_enabled=False)
+    term.set_command([0], target_offset=(0., 0., 0.))
     advance(env, term, 5)
     self.assertEqual(term.phase[0], LOWER)
     before = term.reference[0].clone()
-    term.set_command([0], fr_enabled=True)
+    term.set_command([0], target_offset=(0., 0., .07))
     advance(env, term, 1)
     self.assertEqual(term.phase[0], REACH)
     torch.testing.assert_close(term.reference[0], before)
@@ -141,9 +202,9 @@ class LocoPedipulationTests(unittest.TestCase):
 
   def test_failed_landing_times_out_without_releasing_support(self):
     env, term = make_env()
-    term.set_command([0], fr_enabled=True)
+    term.set_command([0], target_offset=(0., 0., .07))
     advance(env, term, 60)
-    term.set_command([0], fr_enabled=False)
+    term.set_command([0], target_offset=(0., 0., 0.))
     env.scene['feet_ground_contact'].data.force[0, 1] = 0.
     advance(env, term, 150)
     self.assertTrue(rewards.landing_failed(env)[0])
@@ -152,7 +213,7 @@ class LocoPedipulationTests(unittest.TestCase):
 
   def test_partial_reset_defers_kinematics_and_preserves_other_environments(self):
     env, term = make_env()
-    term.set_command([0, 1], fr_enabled=True)
+    term.set_command([0, 1], target_offset=(0., 0., .07))
     advance(env, term, 25)
     before = (term.reference[1].clone(), term.phase[1].clone(), term.elapsed[1].clone())
     term.reset(torch.tensor([0]))
@@ -174,7 +235,7 @@ class LocoPedipulationTests(unittest.TestCase):
     for active in (False, True):
       for standing in (False, True):
         self.assertTrue(((term.enabled == active) & (stopped == standing)).any())
-    term.set_command([0], velocity=(.12, 0., 0.), fr_enabled=True, target_offset=(0., 0., 0.))
+    term.set_command([0], velocity=(.12, 0., 0.), target_offset=(0., 0., .07))
     requested = term.requested_offset[0].clone()
     term._resample_command(torch.tensor([0]))
     self.assertTrue(term.enabled[0])
@@ -185,12 +246,12 @@ class LocoPedipulationTests(unittest.TestCase):
 
   def test_tripod_speed_limits_and_stationary_curriculum(self):
     env, term = make_env()
-    term.set_command([0, 1], velocity=(.8, .4, .8), fr_enabled=True)
+    term.set_command([0, 1], velocity=(.8, .4, .8), target_offset=(0., 0., .07))
     advance(env, term, 60)
-    torch.testing.assert_close(term.command[0], torch.tensor((.35, .15, .4)))
+    torch.testing.assert_close(term.command[0, :3], torch.tensor((.35, .15, .4)))
     term.stage = 1
     advance(env, term, 30)
-    torch.testing.assert_close(term.command[:2], torch.zeros(2, 3))
+    torch.testing.assert_close(term.command[:2, :3], torch.zeros(2, 3))
 
   def test_rewards_exclude_fr_only_in_manipulation_and_gate_contact(self):
     env, term = make_env()
@@ -245,12 +306,12 @@ class LocoPedipulationTests(unittest.TestCase):
 
   def test_landing_logging_survives_resets_and_counts_interruptions(self):
     env, term = make_env()
-    term.set_command([0, 1, 2], fr_enabled=True)
+    term.set_command([0, 1, 2], target_offset=(0., 0., .07))
     advance(env, term, 60)
-    term.set_command([0, 1, 2], fr_enabled=False)
+    term.set_command([0, 1, 2], target_offset=(0., 0., 0.))
     env.scene['feet_ground_contact'].data.force[1:3, 1] = 0.
     advance(env, term, 40)
-    term.set_command([1], fr_enabled=True)
+    term.set_command([1], target_offset=(0., 0., .07))
     advance(env, term, 1)
     advance(env, term, 100)
     self.assertTrue(rewards.landing_failed(env)[2])

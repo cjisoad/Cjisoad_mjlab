@@ -39,11 +39,11 @@ def main():
   env = ManagerBasedRlEnv(cfg, device=args.device)
   try:
     obs, _ = env.reset()
-    assert obs['actor'].shape == (2, 65)
-    assert obs['critic'].shape == (2, 92)
+    assert obs['actor'].shape == (2, 48)
+    assert obs['critic'].shape == (2, 95)
     term = env.command_manager.get_term('twist')
-    term.set_command([0, 1], velocity=(0., 0., 0.), fr_enabled=False)
-    term.set_command([0], fr_enabled=True, target_offset=(0., 0., .07))
+    term.set_command([0, 1], velocity=(0., 0., 0.), target_offset=(0., 0., 0.))
+    term.set_command([0], target_offset=(0., 0., .07))
     actions = torch.zeros(2, 12, device=args.device)
     for _ in range(14):
       obs, reward, terminated, _, _ = env.step(actions)
@@ -52,7 +52,7 @@ def main():
       assert not terminated.any()
     assert term.phase[0] == HOLD and term.phase[1] == QUAD
     assert term.blend[0] == 1. and term.blend[1] == 0.
-    term.set_command([0], fr_enabled=False)
+    term.set_command([0], target_offset=(0., 0., 0.))
     for _ in range(14):
       env.step(actions)
     assert term.phase[0] == QUAD, 'Landing contact did not release the manipulation state'
@@ -65,7 +65,7 @@ def main():
     _, _, _, truncated, _ = env.step(actions)
     assert truncated.all()
     assert (env.episode_length_buf == 0).all()
-    print(f'PASS: {args.device} rollout, 65/92 observations, transitions, partial reset and timeout')
+    print(f'PASS: {args.device} rollout, 48/95 observations, transitions, partial reset and timeout')
 
     if args.ppo:
       agent_cfg = loco_pedipulation_ppo_runner_cfg()

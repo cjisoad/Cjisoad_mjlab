@@ -9,9 +9,9 @@ and low-speed tripod locomotion. It does not include object interaction.
 
 The `twist` command term coordinates both command types:
 
-- `command`: `[vx, vy, wz]`, in m/s and rad/s, after velocity ramping.
-- `enabled`: an explicit per-environment FR enable flag.
-- `requested_offset`: `[dx, dy, dz]`, in meters from the nominal standing FR site.
+- `command`: `[vx, vy, wz, dx, dy, dz]`, in m/s, rad/s and meters, after velocity ramping.
+- Any nonzero `[dx, dy, dz]` enables FR control; all three zero means no FR operation.
+- `requested_offset`: the accepted `[dx, dy, dz]` target in meters from the nominal standing FR site.
 - `reference`: the current interpolated FR reference in the anchor frame.
 
 The anchor origin is the current `base_link` origin. Its Z axis is opposite
@@ -24,8 +24,7 @@ p_goal_W = p_base_W + R_WH * (p_zero_H + requested_offset)
 ```
 
 Velocity rewards also use this anchor frame. Goals are relative to the moving
-base, not fixed world points. Disabling FR control is independent of the target
-coordinates; zero input offsets do not implicitly disable control.
+base, not fixed world points. The zero offset is the no-operation sentinel and implicitly disables FR control.
 
 The nominal FR site is approximately `[0.1934, -0.11509, -0.27302]` m relative
 to the base. Targets come from a MuJoCo FK grid of FR hip/thigh/calf angles,
@@ -59,13 +58,13 @@ and completion of the lowering trajectory. Failure to land within another
 2 s terminates the episode. Commands can be canceled, retargeted or reenabled
 during transitions. Reset reference initialization waits for fresh kinematics.
 
-All modes share the same **65D actor**, **92D critic**, and **12D action**
-contracts. Actor observations retain flat locomotion proprioception and phase,
-then append 18 values: enable (1), manipulation blend (1), one-hot phase (6),
-transition progress (1), accepted goal offset (3), current reference offset (3),
-and FR reference error (3). The goal is visible during preparation. FR error
-is computable from joint kinematics and attitude. Critic also observes anchor
-linear velocity, foot heights, air times, contacts and contact forces.
+All modes share a **48D actor**, **95D critic**, and **12D action** contract. The actor
+uses Pedipulation's state layout: body angular velocity (3), projected gravity (3),
+six-value command (6), relative joint position (12), relative joint velocity (12),
+and previous action (12). Phase, blend, target reference and contact details remain
+internal, reward-only or critic-only state. Critic additionally observes anchor
+linear velocity, gait phase, FR transition state, foot heights, air times, contacts
+and contact forces.
 
 Original `velocity` and `Pedipulation` checkpoints have incompatible inputs.
 Train this task with its own checkpoints. Its own checkpoints preserve the
@@ -187,8 +186,8 @@ For programmatic control:
 ```python
 term = env.command_manager.get_term('twist')
 term.set_command([0], velocity=(0.15, 0., 0.),
-                 fr_enabled=True, target_offset=(0.02, -0.02, 0.08))
-term.set_command([0], fr_enabled=False)
+                 target_offset=(0.02, -0.02, 0.08))
+term.set_command([0], target_offset=(0., 0., 0.))
 term.release_manual([0])
 ```
 
@@ -222,3 +221,8 @@ Verification on 2026-09-23:
 - Python compilation and trailing-whitespace checks passed. Ruff was not
   available in the environment.
 - No full policy training or convergence assessment was performed.
+
+
+## Policy and command ABI
+
+The deployed actor uses Pedipulation's 48-value ABI: angular velocity (3), projected gravity (3), command `[vx, vy, wz, dx, dy, dz]` (6), relative joint position (12), joint velocity (12), and prior action (12). The last three command values are the FR target offset in the gravity-aligned frame. An all-zero offset means no FR operation; any nonzero offset enables the internal right-front transition machine. Phase, blend, reference and contact details remain internal/reward or critic-only state and are not actor inputs. This changed ABI requires a new training run; prior 65-input checkpoints cannot load.

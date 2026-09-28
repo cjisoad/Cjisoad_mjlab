@@ -26,10 +26,17 @@ def loco_pedipulation_env_cfg(play=False):
   cfg.sim.mujoco.iterations = 20
   cfg.commands = {'twist': LocoPedipulationCommandCfg(
     debug_vis=play, initial_stage=3 if play else 0, curriculum_enabled=not play)}
-  for group in ('actor', 'critic'):
-    cfg.observations[group].terms['phase'] = ObservationTermCfg(func=observations.gait_phase)
-    cfg.observations[group].terms['foot_control'] = ObservationTermCfg(func=observations.foot_control_state)
-  cfg.observations['critic'].terms['base_lin_vel'] = ObservationTermCfg(func=observations.base_velocity)
+  # Keep the deployed actor ABI identical to Pedipulation: one 48-value policy term.
+  cfg.observations['actor'].terms = {
+    'policy': ObservationTermCfg(func=observations.policy_state, params={'add_noise': not play})}
+  cfg.observations['critic'].terms = {
+    'policy': ObservationTermCfg(func=observations.shared_policy_state),
+    'base_lin_vel': ObservationTermCfg(func=observations.base_velocity),
+    'phase': ObservationTermCfg(func=observations.gait_phase),
+    'foot_control': ObservationTermCfg(func=observations.foot_control_state),
+    **{name: term for name, term in cfg.observations['critic'].terms.items()
+       if name in ('foot_height', 'foot_air_time', 'foot_contact', 'foot_contact_forces')},
+  }
   # Resolve site order explicitly wherever per-foot arrays are consumed.
   cfg.observations['critic'].terms['foot_height'].params['asset_cfg'] = SceneEntityCfg(
     'robot', site_names=('FL', 'FR', 'RL', 'RR'), preserve_order=True)

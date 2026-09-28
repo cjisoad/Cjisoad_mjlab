@@ -51,7 +51,7 @@ def stand_still(env):
   error = (robot.data.joint_pos - robot.data.default_joint_pos).square()
   error[:, term.fr_joint_ids] *= (1. - term.blend[:, None])
   # Support joints must be free to reposition while the robot balances on three legs.
-  return error.sum(-1) * (term.command.norm(dim=-1) < .05) * (1. - term.blend)
+  return error.sum(-1) * (term.command[:, :3].norm(dim=-1) < .05) * (1. - term.blend)
 
 
 def feet_gait(env):
@@ -65,7 +65,7 @@ def feet_gait(env):
   weights = torch.ones_like(contact, dtype=torch.float32)
   weights[:, term.fr_index] = 0.
   tripod = ((tripod_stance == contact).float() * weights).sum(-1) / 3.
-  moving = term.command.norm(dim=-1) > .05
+  moving = term.command[:, :3].norm(dim=-1) > .05
   return torch.lerp(quad, tripod, term.blend) * moving
 
 
@@ -75,7 +75,7 @@ def foot_clearance(env, target_height=.1):
   height = robot.data.site_pos_w[:, term.site_ids, 2]
   speed = robot.data.site_lin_vel_w[:, term.site_ids, :2].norm(dim=-1)
   cost = (height - target_height).abs() * speed * term.support_weights
-  return cost.sum(-1) * (term.command.norm(dim=-1) > .05)
+  return cost.sum(-1) * (term.command[:, :3].norm(dim=-1) > .05)
 
 
 def foot_slip(env):
@@ -93,7 +93,7 @@ def soft_landing(env):
 def support_contact(env):
   term = _term(env)
   weights = term.support_weights
-  return (term.contacts * weights).sum(-1) / weights.sum(-1).clamp_min(1.) * (term.command.norm(dim=-1) < .05)
+  return (term.contacts * weights).sum(-1) / weights.sum(-1).clamp_min(1.) * (term.command[:, :3].norm(dim=-1) < .05)
 
 
 def fr_position_tracking(env, std=.05):

@@ -9,9 +9,6 @@ import time
 from keyboard_control import KeyboardController
 
 ROOT = Path(__file__).resolve().parents[1]
-_CHECKPOINT_RELATIVE = Path('logs/rsl_rl/loco_pedipulation/2026-09-24_03-13-35/model_14900.pt')
-_DEFAULT_CANDIDATES = (ROOT / _CHECKPOINT_RELATIVE, ROOT.parent.parent / _CHECKPOINT_RELATIVE)
-DEFAULT_CHECKPOINT = next((path for path in _DEFAULT_CANDIDATES if path.is_file()), _DEFAULT_CANDIDATES[0])
 PHASE_NAMES = ('QUAD', 'PREPARE', 'REACH', 'HOLD', 'LOWER', 'RECOVER')
 
 
@@ -22,20 +19,18 @@ class KeyboardCommandBridge:
     self.term = term
     self.env_ids = tuple(range(num_envs))
     self._previous_target = None
-    self._target_z = .07
 
   def update(self, controller):
     values = tuple(float(value) for value in controller.command)
     velocity, offset = values[:3], values[3:]
-    enabled = any(offset)
-    target = (offset[0], offset[1], self._target_z + offset[2]) if enabled else (0., 0., 0.)
+    target = offset if any(offset) else (0., 0., 0.)
     changed = target != self._previous_target
-    self.term.set_command(self.env_ids, velocity=velocity, fr_enabled=enabled,
+    self.term.set_command(self.env_ids, velocity=velocity,
                           target_offset=target if changed else None)
     self._previous_target = target
 
   def release(self):
-    self.term.set_command(self.env_ids, velocity=(0., 0., 0.), fr_enabled=False,
+    self.term.set_command(self.env_ids, velocity=(0., 0., 0.),
                           target_offset=(0., 0., 0.))
     self.term.release_manual(self.env_ids)
     self._previous_target = None
@@ -125,7 +120,8 @@ def smoke(env, policy, controller, bridge, steps):
 
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
-  parser.add_argument('--checkpoint-file', type=Path, default=DEFAULT_CHECKPOINT)
+  parser.add_argument('--checkpoint-file', type=Path, required=True,
+                      help='48-input Loco Pedipulation checkpoint trained with this interface')
   parser.add_argument('--device', default='cuda:0')
   parser.add_argument('--seed', type=int, default=42)
   parser.add_argument('--status-file', type=Path, help='Optional live JSON for diagnostics')

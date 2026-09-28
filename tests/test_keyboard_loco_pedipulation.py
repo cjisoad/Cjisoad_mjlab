@@ -16,17 +16,17 @@ class KeyboardLocoBridgeTests(unittest.TestCase):
     calls = []
 
     class Term:
-      def set_command(self, env_ids, *, velocity=None, fr_enabled=None, target_offset=None):
-        calls.append((tuple(env_ids), velocity, fr_enabled, target_offset))
+      def set_command(self, env_ids, *, velocity=None, target_offset=None):
+        calls.append((tuple(env_ids), velocity, target_offset))
 
     controller = SimpleNamespace(command=(.2, 0., -.4, .03, -.02, .07))
     bridge = KeyboardCommandBridge(Term(), num_envs=1)
     bridge.update(controller)
-    self.assertEqual(calls[-1], ((0,), (.2, 0., -.4), True, (.03, -.02, .14)))
+    self.assertEqual(calls[-1], ((0,), (.2, 0., -.4), (.03, -.02, .07)))
 
     controller.command = (0., 0., 0., 0., 0., 0.)
     bridge.update(controller)
-    self.assertEqual(calls[-1], ((0,), (0., 0., 0.), False, (0., 0., 0.)))
+    self.assertEqual(calls[-1], ((0,), (0., 0., 0.), (0., 0., 0.)))
 
   def test_bridge_does_not_restart_target_transition_every_tick(self):
     from keyboard_loco_pedipulation import KeyboardCommandBridge
@@ -34,7 +34,7 @@ class KeyboardLocoBridgeTests(unittest.TestCase):
     target_calls = []
 
     class Term:
-      def set_command(self, env_ids, *, velocity=None, fr_enabled=None, target_offset=None):
+      def set_command(self, env_ids, *, velocity=None, target_offset=None):
         if target_offset is not None:
           target_calls.append(target_offset)
 
@@ -42,7 +42,7 @@ class KeyboardLocoBridgeTests(unittest.TestCase):
     bridge = KeyboardCommandBridge(Term(), num_envs=1)
     bridge.update(controller)
     bridge.update(controller)
-    self.assertEqual(target_calls, [(0.03, 0., 0.14)])
+    self.assertEqual(target_calls, [(0.03, 0., 0.07)])
 
 
 if __name__ == "__main__":

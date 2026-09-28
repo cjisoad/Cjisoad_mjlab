@@ -7,6 +7,8 @@ from .metrics import ManipulationLogger
 
 def loco_pedipulation_ppo_runner_cfg():
   cfg = unitree_go2_ppo_runner_cfg()
+  cfg.actor.obs_normalization = False
+  cfg.critic.obs_normalization = False
   cfg.experiment_name = 'loco_pedipulation'
   cfg.logger = 'tensorboard'
   cfg.upload_model = False

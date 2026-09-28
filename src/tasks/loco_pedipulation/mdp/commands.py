@@ -77,9 +77,10 @@ class LocoPedipulationCommand(CommandTerm):
     self.easy_indices = easy.nonzero().flatten()
     if not len(self.easy_indices):
       raise ValueError('Workspace has no targets for the initial manipulation curriculum')
-    self._command = torch.zeros(self.num_envs, 3, device=self.device)
-    self.requested_velocity = torch.zeros_like(self._command)
-    self.requested_offset = self.offsets[self.easy_indices[0]].expand(self.num_envs, -1).clone()
+    # Public command ABI matches Pedipulation: velocity plus FR offset.
+    self._command = torch.zeros(self.num_envs, 6, device=self.device)
+    self.requested_velocity = torch.zeros(self.num_envs, 3, device=self.device)
+    self.requested_offset = torch.zeros(self.num_envs, 3, device=self.device)
     self.enabled = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
     self.manual = torch.zeros_like(self.enabled)
     self._pending_reset = torch.ones_like(self.enabled)
@@ -159,6 +160,10 @@ class LocoPedipulationCommand(CommandTerm):
     self.contact_time[env_ids] = 0.
     self.gait_phase[env_ids] = 0.
     self._command[env_ids] = 0.
+    self.requested_velocity[env_ids] = 0.
+    self.requested_offset[env_ids] = 0.
+    self.enabled[env_ids] = False
+    self.manual[env_ids] = False
     self._target_changed[env_ids] = False
     self._pending_reset[env_ids] = True
     super().reset(env_ids)
@@ -177,14 +182,19 @@ class LocoPedipulationCommand(CommandTerm):
     standing |= active & ((self.stage == 1)
       | (torch.rand(count, device=self.device) < self.cfg.tripod_standing_probability))
     self.requested_velocity[ids[standing]] = 0.
-    self.enabled[ids] = active
     bank = self.easy_indices if self.stage < 3 else torch.arange(len(self.offsets), device=self.device)
     selected = bank[torch.randint(len(bank), (count,), device=self.device)]
     self.requested_offset[ids] = self.offsets[selected]
-    self._target_changed[ids] = True
+    self._command[ids, 3:] = self.requested_offset[ids] * active[:, None]
+    self.enabled[ids] = active
+    self._target_changed[ids] = active
 
-  def set_command(self, env_ids, *, velocity=None, fr_enabled=None, target_offset=None):
-    """Manual control; Cartesian offsets are projected to the reachable FK bank."""
+  def set_command(self, env_ids, *, velocity=None, target_offset=None):
+    """Set a six-value manual command; nonzero FR offset enables manipulation.
+
+    The Cartesian target is always mapped to the task's precomputed reachable FK
+    bank.  A literal zero is retained as the no-target sentinel.
+    """
     ids = torch.as_tensor(env_ids, dtype=torch.long, device=self.device).reshape(-1)
     if velocity is not None:
       velocity = torch.as_tensor(velocity, device=self.device, dtype=torch.float32).expand(len(ids), 3)
@@ -194,20 +204,22 @@ class LocoPedipulationCommand(CommandTerm):
       offsets = torch.as_tensor(target_offset, device=self.device, dtype=torch.float32).expand(len(ids), 3)
       if not torch.isfinite(offsets).all():
         raise ValueError('Foot offsets must be finite')
+      active = (offsets != 0).any(-1)
       nearest = torch.cdist(offsets, self.offsets).argmin(-1)
     self.manual[ids] = True
     if velocity is not None:
       self.requested_velocity[ids] = velocity
-    if fr_enabled is not None:
-      self.enabled[ids] = torch.as_tensor(fr_enabled, device=self.device, dtype=torch.bool)
     if target_offset is not None:
-      self.requested_offset[ids] = self.offsets[nearest]
-      self._target_changed[ids] = True
+      mapped = self.offsets[nearest] * active[:, None]
+      changed = (mapped != self._command[ids, 3:]).any(-1)
+      self.requested_offset[ids] = mapped
+      self._command[ids, 3:] = mapped
+      self.enabled[ids] = active
+      self._target_changed[ids] |= changed & active
 
   def release_manual(self, env_ids):
     ids = torch.as_tensor(env_ids, dtype=torch.long, device=self.device).reshape(-1)
     self.manual[ids] = False
-    self.time_left[ids] = 0.
 
   def _begin(self, mask, phase, goal=None):
     self.phase[mask] = phase
@@ -240,6 +252,8 @@ class LocoPedipulationCommand(CommandTerm):
     self.training_metrics.record_tracking(hold, self.command, velocity, angular)
 
   def _update_command(self):
+    # The public target sentinel is authoritative; internal phase state is not actor input.
+    self.enabled.copy_((self._command[:, 3:] != 0).any(-1))
     self.initialize_reference()
     dt = self._env.step_dt
     self.elapsed += dt
@@ -287,7 +301,7 @@ class LocoPedipulationCommand(CommandTerm):
     active = self.enabled | (self.phase != QUAD)
     desired = torch.where(active[:, None], self.requested_velocity.clamp(-limit, limit), self.requested_velocity)
     step = dt / self.cfg.velocity_ramp_time
-    self._command += (desired - self._command).clamp(-step, step)
+    self._command[:, :3] += (desired - self._command[:, :3]).clamp(-step, step)
     period = .6 + .6 * self.blend
     self.gait_phase = (self.gait_phase + dt / period) % 1.
 
@@ -299,7 +313,6 @@ class LocoPedipulationCommand(CommandTerm):
     from viser import Icon
     with server.gui.add_folder('Loco pedipulation'):
       manual = server.gui.add_checkbox('Manual', initial_value=False)
-      enabled = server.gui.add_checkbox('FR enabled', initial_value=False)
       velocity = [server.gui.add_slider(label, min=bounds[0], max=bounds[1], step=.01, initial_value=0.)
                   for label, bounds in zip(('vx', 'vy', 'wz'),
                     (self.cfg.lin_vel_x, self.cfg.lin_vel_y, self.cfg.ang_vel_z))]
@@ -311,25 +324,26 @@ class LocoPedipulationCommand(CommandTerm):
       def _(_event):
         for slider in velocity:
           slider.value = 0.
-        enabled.value = False
-    self._gui = (manual, enabled, velocity, offsets, get_env_idx)
+        for slider in offsets:
+          slider.value = 0.
+    self._gui = (manual, velocity, offsets, get_env_idx)
     self._gui_previous = None
     self._gui_env = None
 
   def _read_gui(self):
     if self._gui is None:
       return
-    manual, enabled, velocity, offsets, get_env_idx = self._gui
+    manual, velocity, offsets, get_env_idx = self._gui
     index = get_env_idx()
     if self._gui_env is not None and (not manual.value or index != self._gui_env):
       self.release_manual([self._gui_env])
       self._gui_previous = None
       self._gui_env = None
     if manual.value:
-      values = (index, enabled.value, *(s.value for s in velocity), *(s.value for s in offsets))
+      values = (index, *(s.value for s in velocity), *(s.value for s in offsets))
       if values != self._gui_previous:
-        target = values[5:] if self._gui_previous is None or values[5:] != self._gui_previous[5:] else None
-        self.set_command([index], velocity=values[2:5], fr_enabled=values[1], target_offset=target)
+        target = values[4:] if self._gui_previous is None or values[4:] != self._gui_previous[4:] else None
+        self.set_command([index], velocity=values[1:4], target_offset=target)
         self._gui_previous = values
       self._gui_env = index
 

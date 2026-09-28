@@ -17,7 +17,7 @@ class ManipulationMetrics:
     self.landing[LANDING_EVENTS.index(name)] += mask.sum()
 
   def record_tracking(self, hold, command, velocity, angular):
-    moving = command.norm(dim=-1) > .05
+    moving = command[:, :3].norm(dim=-1) > .05
     linear_error = (velocity[:, :2] - command[:, :2]).norm(dim=-1)
     yaw_error = (angular[:, 2] - command[:, 2]).abs()
     values = torch.stack((torch.ones_like(linear_error), linear_error + .25 * yaw_error,

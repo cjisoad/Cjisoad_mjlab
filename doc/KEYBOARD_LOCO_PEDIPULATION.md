@@ -1,16 +1,13 @@
 # Loco Pedipulation Keyboard Playback
 
-Launch the dedicated native MuJoCo player from the repository root:
+Launch the dedicated native MuJoCo player after training a checkpoint with the current 48-value actor interface:
 
 ```bash
-python scripts/keyboard_loco_pedipulation.py
+python scripts/keyboard_loco_pedipulation.py \
+  --checkpoint-file logs/rsl_rl/loco_pedipulation/RUN/model_XXXX.pt
 ```
 
-It defaults to the trained checkpoint:
-
-```text
-logs/rsl_rl/loco_pedipulation/2026-09-24_03-13-35/model_14900.pt
-```
+`model_14900.pt` from `2026-09-24_03-13-35` has a 65-value actor input and is incompatible with this interface.
 
 The playback window runs one Go2 robot. Click it before sending commands.
 
