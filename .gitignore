@@ -27,3 +27,5 @@ __pycache__/
 /src/tasks/velocity/config/h2/
 /src/tasks/velocity/config/r1/
 /scripts/csv_to_npz.py
+
+.worktrees/
