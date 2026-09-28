@@ -66,9 +66,13 @@ class LocoPedipulationTests(unittest.TestCase):
   def test_command_is_six_dimensional_and_target_zero_controls_activation(self):
     env, term = make_env()
     self.assertEqual(term.command.shape, (4, 6))
-    term.set_command([0], velocity=(.2, -.1, .3), target_offset=(.03, 0., .07))
+    target = (.013, -.011, .063)
+    term.set_command([0], velocity=(.2, -.1, .3), target_offset=target)
     advance(env, term, 25)
     torch.testing.assert_close(term.command[0, :3], torch.tensor((.2, -.1, .3)))
+    # Manual targets stay continuous instead of being snapped to an FK-bank point.
+    torch.testing.assert_close(term.command[0, 3:], torch.tensor(target))
+    torch.testing.assert_close(term.requested_offset[0], torch.tensor(target))
     self.assertTrue(term.enabled[0])
     self.assertTrue((term.command[0, 3:] != 0).any())
     term.set_command([0], target_offset=(0., 0., 0.))
@@ -199,6 +203,18 @@ class LocoPedipulationTests(unittest.TestCase):
     torch.testing.assert_close(term.reference[0], before)
     advance(env, term, 40)
     self.assertEqual(term.phase[0], HOLD)
+
+  def test_manual_target_updates_during_reach_keep_one_continuous_transition(self):
+    env, term = make_env()
+    term.set_command([0], target_offset=(.013, -.011, .063))
+    advance(env, term, 20)
+    self.assertEqual(term.phase[0], REACH)
+    elapsed = term.elapsed[0].clone()
+    term.set_command([0], target_offset=(.014, -.010, .064))
+    torch.testing.assert_close(term.goal[0], term.zero + torch.tensor((.014, -.010, .064)))
+    self.assertFalse(bool(term._target_changed[0]))
+    advance(env, term, 1)
+    self.assertGreater(term.elapsed[0], elapsed)
 
   def test_failed_landing_times_out_without_releasing_support(self):
     env, term = make_env()

@@ -192,8 +192,10 @@ class LocoPedipulationCommand(CommandTerm):
   def set_command(self, env_ids, *, velocity=None, target_offset=None):
     """Set a six-value manual command; nonzero FR offset enables manipulation.
 
-    The Cartesian target is always mapped to the task's precomputed reachable FK
-    bank.  A literal zero is retained as the no-target sentinel.
+    Manual Cartesian targets are kept continuous, matching the Pedipulation
+    keyboard interface.  Automatic training samples still come from the
+    precomputed reachable FK bank in :meth:`_resample_command`.  A literal zero
+    is retained as the no-target sentinel.
     """
     ids = torch.as_tensor(env_ids, dtype=torch.long, device=self.device).reshape(-1)
     if velocity is not None:
@@ -205,17 +207,22 @@ class LocoPedipulationCommand(CommandTerm):
       if not torch.isfinite(offsets).all():
         raise ValueError('Foot offsets must be finite')
       active = (offsets != 0).any(-1)
-      nearest = torch.cdist(offsets, self.offsets).argmin(-1)
     self.manual[ids] = True
     if velocity is not None:
       self.requested_velocity[ids] = velocity
     if target_offset is not None:
-      mapped = self.offsets[nearest] * active[:, None]
-      changed = (mapped != self._command[ids, 3:]).any(-1)
-      self.requested_offset[ids] = mapped
-      self._command[ids, 3:] = mapped
+      changed = (offsets != self._command[ids, 3:]).any(-1)
+      self.requested_offset[ids] = offsets
+      self._command[ids, 3:] = offsets
       self.enabled[ids] = active
-      self._target_changed[ids] |= changed & active
+      phases = self.phase[ids]
+      # During an ongoing reach, move the endpoint continuously instead of
+      # restarting the smoothstep trajectory for every keyboard update.  A
+      # target change in HOLD still starts one new reach, as in the automatic
+      # command path.
+      reaching = active & changed & (phases == REACH)
+      self.goal[ids[reaching]] = self.zero + offsets[reaching]
+      self._target_changed[ids] |= active & changed & (phases == HOLD)
 
   def release_manual(self, env_ids):
     ids = torch.as_tensor(env_ids, dtype=torch.long, device=self.device).reshape(-1)
