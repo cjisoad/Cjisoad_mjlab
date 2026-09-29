@@ -17,7 +17,7 @@ class RunnerCfgTests(unittest.TestCase):
     self.assertEqual(cfg.max_iterations, 15000)
     self.assertEqual(cfg.clip_actions, 10.)
     self.assertEqual(cfg.logger, 'wandb')
-    self.assertFalse(cfg.upload_model)
+    self.assertTrue(cfg.upload_model)
     self.assertEqual(cfg.obs_groups, {'actor': ('actor',), 'critic': ('critic',)})
 
 

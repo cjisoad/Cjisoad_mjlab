@@ -11,6 +11,8 @@ def leg_manip_ppo_runner_cfg():
   cfg.seed = 42
   cfg.experiment_name = 'leg_manip'
   cfg.clip_actions = 10.
+  # Upload every periodic checkpoint (and the exported ONNX) to the wandb run.
+  cfg.upload_model = True
   cfg.algorithm = replace(cfg.algorithm,
                           class_name='src.tasks.leg_manip.rl.ppo:LegManipPPO')
   return cfg
