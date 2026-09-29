@@ -23,12 +23,14 @@ class LocoPedipulationOnPolicyRunner(VelocityOnPolicyRunner):
     term = self.env.unwrapped.command_manager.get_term('twist')
     self.logger = ManipulationLogger(self.logger, term.training_metrics, self.is_distributed)
 
-  def save(self, path, infos=None):
+  def _curriculum_state(self):
     term = self.env.unwrapped.command_manager.get_term('twist')
-    state = {'stage': term.stage, 'stage_started': term.stage_started,
-             'window': term.curriculum_window.clone(), 'episodes': term.curriculum_episodes,
-             'landing_counts': self.logger.landing_totals.clone()}
-    super().save(path, {**(infos or {}), 'loco_pedipulation': state})
+    return {'stage': term.stage, 'stage_started': term.stage_started,
+            'window': term.curriculum_window.clone(), 'episodes': term.curriculum_episodes,
+            'landing_counts': self.logger.landing_totals.clone()}
+
+  def save(self, path, infos=None):
+    super().save(path, {**(infos or {}), 'loco_pedipulation': self._curriculum_state()})
 
   def load(self, path, load_cfg=None, strict=True, map_location=None):
     infos = super().load(path, load_cfg=load_cfg, strict=strict, map_location=map_location)

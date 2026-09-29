@@ -69,6 +69,19 @@ class RegistrationTests(unittest.TestCase):
     from src.tasks.loco_pedipulation.rl import LocoPedipulationOnPolicyRunner
     self.assertTrue(issubclass(LegManipOnPolicyRunner, LocoPedipulationOnPolicyRunner))
 
+  def test_runner_save_bypasses_joint_position_action_onnx_metadata(self):
+    # VelocityOnPolicyRunner.save exports ONNX metadata that asserts mjlab's
+    # JointPositionAction; leg_manip uses PedipulationPositionAction instead.
+    from mjlab.rl.runner import MjlabOnPolicyRunner
+    from src.tasks.leg_manip.rl import LegManipOnPolicyRunner
+    from src.tasks.loco_pedipulation.rl import LocoPedipulationOnPolicyRunner
+    self.assertIn('save', LegManipOnPolicyRunner.__dict__)
+    self.assertTrue(hasattr(LocoPedipulationOnPolicyRunner, '_curriculum_state'))
+    import inspect
+    source = inspect.getsource(LegManipOnPolicyRunner.save)
+    self.assertIn('MjlabOnPolicyRunner.save', source)
+    self.assertIn('_curriculum_state', source)
+
 
 if __name__ == '__main__':
   unittest.main()
