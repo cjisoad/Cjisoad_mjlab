@@ -9,6 +9,9 @@ class KeyboardController:
   linear_acceleration: float = 1.
   yaw_acceleration: float = 2.
   target_rate: float = .12
+  dx_low: float = -.10
+  dx_high: float = .10
+  dz_high: float = .10
   _values: list[float] = field(default_factory=lambda: [0.] * 6, init=False)
 
   @property
@@ -42,8 +45,8 @@ class KeyboardController:
       self._values[3:] = [0., 0., 0.]
       return
     for index, sign, low, high in (
-        (3, direction('right', 'left'), -.10, .10),
+        (3, direction('right', 'left'), self.dx_low, self.dx_high),
         (4, direction('up', 'down'), -.08, .08),
-        (5, direction('q', 'e'), max(-.10, self.min_z_offset), .10)):
+        (5, direction('q', 'e'), max(-.10, self.min_z_offset), self.dz_high)):
       value = max(low, min(high, self._values[index] + sign * self.target_rate * dt))
       self._values[index] = 0. if abs(value) < 1e-9 else value
