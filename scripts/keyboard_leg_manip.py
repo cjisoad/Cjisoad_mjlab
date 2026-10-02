@@ -127,7 +127,7 @@ def smoke(env, policy, controller, bridge, steps):
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument('--checkpoint-file', type=Path, required=True,
-                      help='48-input Leg Manip checkpoint trained with this interface')
+                      help='51-input Leg Manip checkpoint; migrate original 48-input checkpoints first')
   parser.add_argument('--device', default='cuda:0')
   parser.add_argument('--seed', type=int, default=42)
   parser.add_argument('--status-file', type=Path, help='Optional live JSON for diagnostics')

@@ -56,15 +56,30 @@ class GroupWeightTests(unittest.TestCase):
       term.group_weight[:] = weight
       torch.testing.assert_close(rewards.alive(env), torch.ones(4))
 
-  def test_biped_base_height_writes_batch_height_score_gate(self):
+  def test_biped_base_height_writes_per_environment_height_score_gate(self):
     env, term = rich_env()
     action = env.action_manager.get_term('joint_pos')
     term.group_weight[:] = 1.
     rewards.biped_base_height(env)
-    self.assertLess(float(action.height_score), .70)
+    self.assertTrue((action.height_score < .70).all())
     env.scene['robot'].data.root_link_pos_w[:, 2] = .52
     rewards.biped_base_height(env)
-    self.assertGreater(float(action.height_score), .70)
+    self.assertTrue((action.height_score > .70).all())
+
+  def test_height_gate_is_independent_in_mixed_batch(self):
+    env, term = rich_env()
+    heights = env.scene['robot'].data.root_link_pos_w[:, 2]
+    heights[:] = .322
+    heights[0] = .52
+    term.group_weight[:] = 1.
+    rewards.biped_base_height(env)
+    score = env.action_manager.get_term('joint_pos').height_score
+    self.assertEqual(tuple(score.shape), (4,))
+    before = rewards.biped_tracking_lin_vel(env)
+    torch.testing.assert_close(before, torch.tensor((1., 0., 0., 0.)))
+    heights[1:] = .52
+    rewards.biped_base_height(env)
+    torch.testing.assert_close(rewards.biped_tracking_lin_vel(env)[0], before[0])
 
   def test_biped_velocity_tracking_uses_anchor_frame_and_gate(self):
     env, term = rich_env()
@@ -146,6 +161,59 @@ class ModeAwareTerminationTests(unittest.TestCase):
     env, term = self.env_with_quat(tipped)
     term.mode[:] = True
     self.assertTrue(fell_over(env, limit_angle=math.radians(60.)).all())
+
+  def upright_exit(self, target=(0., 0., 0.)):
+    import math
+    env, term = self.env_with_quat(quat_from_euler_xyz(
+      torch.tensor(0.), torch.tensor(-math.pi / 2.), torch.tensor(0.)))
+    term.set_command([0], target_offset=(0., 0., ABOVE_BAND))
+    advance(env, term, 60)
+    self.assertTrue(term.mode[0])
+    term.set_command([0], target_offset=target)
+    advance(env, term, 1)
+    self.assertFalse(term.mode[0])
+    return env, term
+
+  def test_canceling_upright_biped_allows_descent(self):
+    env, term = self.upright_exit()
+    self.assertFalse(fell_over(env)[0], 'Cancel must not immediately kill the upright robot')
+    self.assertAlmostEqual(float(term.group_weight[0]), .975, places=5)
+
+  def test_low_target_also_allows_biped_descent(self):
+    env, term = self.upright_exit(target=(0., 0., .1))
+    self.assertFalse(fell_over(env)[0])
+
+  def test_descent_grace_expires_even_if_reward_weight_is_zero(self):
+    env, term = self.upright_exit()
+    advance(env, term, 45)
+    self.assertEqual(float(term.group_weight[0]), 0.)
+    self.assertFalse(fell_over(env)[0], 'Descent grace must outlive the reward ramp')
+    advance(env, term, int(term.cfg.biped_exit_timeout / env.step_dt))
+    self.assertTrue(fell_over(env)[0], 'An upright failed exit must eventually terminate')
+
+  def test_descent_still_terminates_sideways_and_excessive_tilt(self):
+    import math
+    env, term = self.upright_exit()
+    gravity = env.scene['robot'].data.projected_gravity_b
+    gravity[0] = torch.tensor((0., 1., 0.))
+    self.assertTrue(fell_over(env)[0])
+    gravity[0] = torch.tensor((-math.sin(math.radians(120.)), 0., -math.cos(math.radians(120.))))
+    self.assertTrue(fell_over(env)[0])
+
+  def test_descent_finishes_after_posture_and_front_contact_recover(self):
+    import math
+    env, term = self.upright_exit()
+    gravity = env.scene['robot'].data.projected_gravity_b
+    gravity[0] = torch.tensor((-math.sin(math.radians(40.)), 0., -math.cos(math.radians(40.))))
+    force = env.scene['feet_ground_contact'].data.force
+    force[0, :2] = 0.
+    advance(env, term, 45)
+    self.assertTrue(term.biped_exiting[0], 'Safe tilt alone does not confirm front support')
+    force[0, 0, 2] = 30.
+    advance(env, term, 1)
+    self.assertFalse(term.biped_exiting[0])
+    gravity[0] = torch.tensor((-1., 0., 0.))
+    self.assertTrue(fell_over(env)[0], 'Normal LOCO limits must resume after recovery')
 
 
 if __name__ == '__main__':

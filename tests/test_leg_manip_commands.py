@@ -17,7 +17,7 @@ BELOW_BAND = .10
 ABOVE_BAND = (TRIPOD_HIGH + BIPED_HIGH) / 2.
 
 
-def make_env(count=4, stage=3, **cfg_overrides):
+def make_env(count=4, stage=2, **cfg_overrides):
   workspace = build_foot_workspace()
   root = torch.tensor((0., 0., workspace.nominal_height), dtype=torch.float32).repeat(count, 1)
   sites = root[:, None, :] + torch.tensor(workspace.zero, dtype=torch.float32).expand(count, 4, 3)
@@ -118,6 +118,32 @@ class ModeHysteresisTests(unittest.TestCase):
     term.group_weight[:] = .5
     torch.testing.assert_close(term.command, before)
 
+  def test_exit_state_is_per_environment_and_cleared_on_reset_or_reentry(self):
+    env, term = make_env()
+    env.scene['robot'].data.projected_gravity_b[:] = torch.tensor((-1., 0., 0.))
+    term.set_command([0, 1], target_offset=(0., 0., ABOVE_BAND))
+    advance(env, term, 50)
+    term.set_command([0, 1], target_offset=(0., 0., 0.))
+    advance(env, term, 2)
+    self.assertEqual(term.biped_exiting.tolist(), [True, True, False, False])
+    elapsed = term.biped_exit_elapsed[1].clone()
+    term.reset(torch.tensor([0]))
+    self.assertFalse(term.biped_exiting[0])
+    self.assertEqual(float(term.biped_exit_elapsed[0]), 0.)
+    torch.testing.assert_close(term.biped_exit_elapsed[1], elapsed)
+    term.set_command([1], target_offset=(0., 0., ABOVE_BAND))
+    advance(env, term, 1)
+    self.assertFalse(term.biped_exiting[1])
+    self.assertEqual(float(term.biped_exit_elapsed[1]), 0.)
+
+  def test_exit_parameters_require_finite_positive_duration_and_safe_angle(self):
+    for timeout in (0., -1., float('nan'), float('inf')):
+      with self.subTest(timeout=timeout), self.assertRaises(ValueError):
+        make_env(biped_exit_timeout=timeout)
+    for angle in (0., -1., torch.pi / 2., float('nan')):
+      with self.subTest(angle=angle), self.assertRaises(ValueError):
+        make_env(biped_exit_recovery_angle=angle)
+
 
 class PhaseMachineTests(unittest.TestCase):
   def test_high_target_uses_standard_lift_sequence(self):
@@ -167,15 +193,17 @@ class PhaseMachineTests(unittest.TestCase):
 
 
 class SamplingTests(unittest.TestCase):
-  def test_stage_below_four_never_samples_above_band_targets(self):
-    torch.manual_seed(0)
-    env, term = make_env(stage=3)
-    term.release_manual(torch.arange(4))
-    for _ in range(25):
-      term._resample_command(torch.arange(4))
-      self.assertLessEqual(float(term.requested_offset[:, 2].max()), TRIPOD_HIGH + 1e-6)
+  def test_first_two_stages_only_sample_nominal_targets(self):
+    for stage in (0, 1):
+      env, term = make_env(stage=stage)
+      term.release_manual(torch.arange(4))
+      for _ in range(25):
+        term._resample_command(torch.arange(4))
+        active = term.enabled
+        torch.testing.assert_close(term.requested_offset[active], term.nominal_biped_offset.expand(int(active.sum()), 3))
+        self.assertFalse(term.manipulating.any())
 
-  def test_stage_four_samples_both_segments(self):
+  def test_operation_stage_samples_both_segments(self):
     torch.manual_seed(0)
     env, term = make_env(stage=STAGE_BIPED)
     term.release_manual(torch.arange(4))
@@ -213,39 +241,26 @@ class SamplingTests(unittest.TestCase):
 
 
 class CurriculumTests(unittest.TestCase):
-  def qualifying_env(self, stage):
-    env, term = make_env(stage=stage, min_stage_steps=100, min_curriculum_episodes=4)
-    term.stage_started = 0
-    env.common_step_counter = 200
-    # One completed episode per env with passing statistics.
-    term.stats[:, 0] = 200.   # quad steps
-    term.stats[:, 1] = 10.    # quad velocity error sum
-    term.stats[:, 2] = 200.   # hold steps
-    term.stats[:, 3] = 2.     # hold position error sum
-    term.stats[:, 4] = 2.     # hold contact count
-    term.stats[:, 5] = 10.    # hold velocity error sum
-    term.stats[:, 6] = 400.   # total steps -> completed episode
-    term.stats[:, 7] = 0.     # terminations
-    term.stats[:, 8] = 20.    # landing attempts
-    term.stats[:, 9] = 19.    # landing confirmed
-    return env, term
-
-  def test_stage_three_promotes_to_biped_stage_on_success(self):
-    env, term = self.qualifying_env(3)
+  def test_operation_stage_is_terminal(self):
+    env, term = make_env(stage=STAGE_BIPED)
+    term.curriculum_window[:] = torch.tensor((200., 190., 10.))
+    term.switch_window[:] = torch.tensor((20., 19.))
+    term.curriculum_episodes = 64
+    env.common_step_counter = 24000
     result = manipulation_curriculum(env, torch.arange(4))
     self.assertEqual(term.stage, STAGE_BIPED)
     self.assertEqual(int(result['stage']), STAGE_BIPED)
 
-  def test_biped_stage_is_terminal(self):
-    env, term = self.qualifying_env(STAGE_BIPED)
-    manipulation_curriculum(env, torch.arange(4))
-    self.assertEqual(term.stage, STAGE_BIPED)
-
-  def test_poor_landing_success_blocks_promotion(self):
-    env, term = self.qualifying_env(3)
-    term.stats[:, 9] = 5.
-    manipulation_curriculum(env, torch.arange(4))
-    self.assertEqual(term.stage, 3)
+  def test_poor_survival_blocks_promotion(self):
+    env, term = make_env(stage=0, min_stage_steps=100, min_curriculum_episodes=4)
+    term.curriculum_window[:] = torch.tensor((200., 190., 10.))
+    term.switch_window[:] = torch.tensor((20., 19.))
+    term.curriculum_episodes = 4
+    term.curriculum_failures = 2
+    env.common_step_counter = 200
+    manipulation_curriculum(env, torch.empty(0, dtype=torch.long))
+    self.assertEqual(term.stage, 0)
+    self.assertEqual(term.pass_streak, 0)
 
 
 if __name__ == '__main__':

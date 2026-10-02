@@ -17,8 +17,8 @@ def anchor_basis(quat_w, gravity_w):
   up = up.expand(quat_w.shape[0], 3)
   diagonal = quat_apply(quat_w, up.new_tensor((1., 0., -1.)).expand_as(up))
   forward = diagonal - (diagonal * up).sum(-1, keepdim=True) * up
-  # The diagonal is only vertical near a 45-degree nose-down pose, far outside
-  # the terminated operating region; keep terminal observations finite.
+  # A 45-degree nose-down pose can make the diagonal vertical. This fallback
+  # keeps values finite, but heading continuity across that pose is not assured.
   reference = up.new_tensor((1., 0., 0.)).expand_as(up)
   reference = reference - (reference * up).sum(-1, keepdim=True) * up
   alternate = up.new_tensor((0., 1., 0.)).expand_as(up)

@@ -44,7 +44,7 @@ class EnvCfgAssemblyTests(unittest.TestCase):
     for name in GATED_BIPED_TERMS:
       self.assertLess(gate_index, names.index(name), name)
 
-  def test_actor_abi_is_a_single_48_value_policy_term(self):
+  def test_actor_abi_is_a_single_51_value_policy_term(self):
     for play in (False, True):
       cfg = leg_manip_env_cfg(play=play)
       self.assertEqual(tuple(cfg.observations['actor'].terms), ('policy',))
@@ -83,10 +83,14 @@ class RealEnvIntegrationTests(unittest.TestCase):
     env = ManagerBasedRlEnv(cfg, device='cpu')
     try:
       obs, _ = env.reset()
-      self.assertEqual(obs['actor'].shape, (2, 48))
+      self.assertEqual(obs['actor'].shape, (2, 51))
       # 48 shared + 3 lin vel + 34 DR + 4 contact + 2 gait + 20 FR/mode
       # + 4 height + 4 air time + 12 contact forces.
       self.assertEqual(obs['critic'].shape, (2, 131))
+      torch.testing.assert_close(obs['critic'][:, :48], obs['actor'][:, :48])
+      from src.tasks.leg_manip.mdp.observations import base_velocity
+      torch.testing.assert_close(obs['critic'][:, 48:51], base_velocity(env))
+      self.assertLessEqual(float((obs['actor'][:, 48:51] - obs['critic'][:, 48:51]).abs().max()), .040001)
       self.assertIsInstance(env.command_manager.get_term('twist'), LegManipCommand)
       self.assertIsInstance(env.action_manager.get_term('joint_pos'), PedipulationPositionAction)
       action = torch.zeros(2, 12)

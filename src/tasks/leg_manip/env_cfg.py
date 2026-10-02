@@ -87,7 +87,7 @@ def leg_manip_env_cfg(play=False):
       {'asset_cfg': SceneEntityCfg('robot', body_names=('base_link',))}),
     ('angular_momentum', rewards.angular_momentum, -.025, {'sensor_name': 'robot/root_angmom'}),
     # BIPED group: rear-leg stand, weighted by w. biped_base_height writes the
-    # batch height gate and must stay first in this group.
+    # per-environment height gate and must stay first in this group.
     ('biped_base_height', rewards.biped_base_height, 1.5, {}),
     ('biped_tracking_lin_vel', rewards.biped_tracking_lin_vel, 2.5, {}),
     ('biped_tracking_ang_vel', rewards.biped_tracking_ang_vel, 2.5, {}),

@@ -46,7 +46,12 @@ def loco_group(func):
 
 
 # Shared terms, active in both groups without weighting.
-fr_position_tracking = loco.fr_position_tracking
+def fr_position_tracking(env, std=.05):
+  term = _term(env)
+  scale = (.15, .30, 1.)[term.stage]
+  # Manual commands retain the original direct FR control contract.
+  factor = torch.where(term.manual, torch.ones_like(term.blend), torch.full_like(term.blend, scale))
+  return loco.fr_position_tracking(env, std=std) * factor
 fr_ground_contact = loco.fr_ground_contact
 manipulation_fraction = loco.manipulation_fraction
 landing_failed = loco.landing_failed
@@ -95,8 +100,8 @@ class mode_posture(loco.mode_posture):
 # BIPED group: Pedipulation terms on the twist term, weighted by w.
 def biped_base_height(env):
   score = torch.exp(-torch.abs(env.scene['robot'].data.root_link_pos_w[:, 2] - .52) * 5)
-  # The source intentionally uses one batch-wide gate, including its reward order.
-  _state(env).height_score = score.mean()
+  # Mixed modes must not let other robots suppress a successful biped's rewards.
+  _state(env).height_score = score
   return score * group_weight(env)
 
 
@@ -145,12 +150,16 @@ def biped_feet_clearance(env, asset_cfg=REAR):
   phase = (env.episode_length_buf * env.step_dt) % 1.6 / 1.6
   target = (2 * torch.pi * phase).sin().abs() * .06
   swing = torch.stack((phase >= .5, phase <= .5), dim=-1)
-  return (torch.exp(-(heights - target[:, None]).abs() * 10) * swing).sum(-1) * _gate(env) * group_weight(env)
+  moving = _term(env).command[:, :3].norm(dim=-1) > .05
+  return (torch.exp(-(heights - target[:, None]).abs() * 10) * swing).sum(-1) * moving * _gate(env) * group_weight(env)
 
 
 def biped_contact(env):
   contacts = env.scene['rear_contact'].data.force.norm(dim=-1) > 1.0
-  return (contacts.sum(-1) == 1).float() * _gate(env) * group_weight(env)
+  moving = _term(env).command[:, :3].norm(dim=-1) > .05
+  static = contacts.all(-1).float()
+  walking = (contacts.sum(-1) == 1).float() * _gate(env)
+  return torch.where(moving, walking, static) * group_weight(env)
 
 
 def biped_ang_xz(env):
@@ -163,10 +172,10 @@ def biped_ang_xz(env):
 def symmetric_joints(env):
   joints = _state(env).joint_pos.reshape(env.num_envs, 4, 3).clone()
   joints[:, (1, 3), 0] *= -1
-  no_target = ~_term(env).enabled
+  no_target = ~_term(env).manipulating
   front_error = (joints[:, 0] - joints[:, 1]).abs().sum(-1)
   rear_error = (joints[:, 2] - joints[:, 3]).abs().sum(-1)
-  return (front_error * no_target + rear_error) * _gate(env) * group_weight(env)
+  return (front_error * no_target + rear_error) * group_weight(env)
 
 
 def orientation_symmetry(env):
@@ -175,14 +184,14 @@ def orientation_symmetry(env):
 
 def feet_height_symmetry(env, asset_cfg=FRONT):
   heights = env.scene[asset_cfg.name].data.site_pos_w[:, asset_cfg.site_ids, 2]
-  enabled = ~_term(env).enabled | ~_gate(env)
+  enabled = ~_term(env).manipulating | ~_gate(env)
   return (heights[:, 0] - heights[:, 1]).abs() * enabled * group_weight(env)
 
 
 def default_pos_front(env):
   state = _state(env)
   error = (state.joint_pos[:, :6] - state.desired_angles[:6]).abs()
-  no_target = ~_term(env).enabled
+  no_target = ~_term(env).manipulating
   return (error[:, :3].sum(-1) + error[:, 3:6].sum(-1) * no_target) * group_weight(env)
 
 
@@ -193,18 +202,18 @@ def default_pos_rear(env):
 
 def default_hip_pos(env):
   hips = _state(env).joint_pos[:, ::3].abs()
-  no_target = ~_term(env).enabled
+  no_target = ~_term(env).manipulating
   return (hips[:, 0] + hips[:, 1] * no_target + hips[:, 2:].sum(-1)) * group_weight(env)
 
 
 def default_pos_reward_FL(env):
   state = _state(env)
   return (torch.exp(-(state.joint_pos[:, :3] - state.desired_angles[:3]).abs().sum(-1))
-          * _gate(env) * group_weight(env))
+          * group_weight(env))
 
 
 def default_pos_reward_FR(env):
   state = _state(env)
-  no_target = ~_term(env).enabled
+  no_target = ~_term(env).manipulating
   return (torch.exp(-(state.joint_pos[:, 3:6] - state.desired_angles[3:6]).abs().sum(-1))
-          * _gate(env) * no_target * group_weight(env))
+          * no_target * group_weight(env))

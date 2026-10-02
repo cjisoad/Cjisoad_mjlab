@@ -40,6 +40,7 @@ class FootWorkspace:
   segment: np.ndarray
   nominal_height: float
   foot_radius: float
+  nominal_biped_offset: np.ndarray
 
 
 @lru_cache(maxsize=8)
@@ -67,6 +68,7 @@ def build_foot_workspace(lift_range=(DZ_MIN, TRIPOD_HIGH),
     return data.site_xpos[site] - data.xpos[base]
 
   zero = forward_kinematics(DEFAULT_ANGLES).copy()
+  nominal_biped_offset = REARED_ROTATION @ forward_kinematics(DESIRED_ANGLES) - zero
   radius = float(model.geom('FR_foot_collision').size[0])
   nominal_height = radius - zero[2]
   joint_ids = [model.joint(name).id for name in FR_JOINTS]
@@ -143,4 +145,4 @@ def build_foot_workspace(lift_range=(DZ_MIN, TRIPOD_HIGH),
   if len(offsets) == low_count:
     raise ValueError('No FR targets satisfy the biped workspace bounds')
   return FootWorkspace(zero, np.asarray(offsets), np.asarray(witnesses),
-                       np.asarray(segments, dtype=np.int64), nominal_height, radius)
+                       np.asarray(segments, dtype=np.int64), nominal_height, radius, nominal_biped_offset)

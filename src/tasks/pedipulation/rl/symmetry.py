@@ -30,11 +30,12 @@ def mirror_actor_observations(observations: torch.Tensor) -> torch.Tensor:
 
 
 def exact_symmetry_loss(
-  actor: Callable[[torch.Tensor], torch.Tensor], observations: torch.Tensor
+  actor: Callable[[torch.Tensor], torch.Tensor], observations: torch.Tensor,
+  *, mirror_observations: Callable[[torch.Tensor], torch.Tensor] = mirror_actor_observations,
 ) -> torch.Tensor:
   """Mirror only target-free samples; a right-only goal has no left counterpart."""
   original = actor(observations)
-  reflected = mirror_actions(actor(mirror_actor_observations(observations)))
+  reflected = mirror_actions(actor(mirror_observations(observations)))
   enabled = (observations[..., 9:12] == 0).all(-1)
   error = (original - reflected).square().mean(-1)
   return (error * enabled).sum() / enabled.sum().clamp_min(1)

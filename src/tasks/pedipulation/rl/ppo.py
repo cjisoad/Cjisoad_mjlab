@@ -36,6 +36,8 @@ class PedipulationPPO(PPO):
   All hooks and instance attributes are restored in ``finally``.
   """
 
+  _symmetry_loss = staticmethod(exact_symmetry_loss)
+
   def __init__(self, *args: Any, sym_coef: float = 1.0, **kwargs: Any) -> None:
     if kwargs.get("symmetry_cfg") is not None:
       raise ValueError("PedipulationPPO supplies its own symmetry loss; symmetry_cfg must be None")
@@ -76,7 +78,7 @@ class PedipulationPPO(PPO):
         mirrored_batch["actor"] = actor_observations
         return self.actor(mirrored_batch)
 
-      symmetry_loss = exact_symmetry_loss(actor_mean, batch_observations["actor"])
+      symmetry_loss = self._symmetry_loss(actor_mean, batch_observations["actor"])
       (self.sym_coef * symmetry_loss).backward()
       symmetry_losses.append(symmetry_loss.detach().item())
 

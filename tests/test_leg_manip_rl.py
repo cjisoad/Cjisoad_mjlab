@@ -22,7 +22,7 @@ class RunnerCfgTests(unittest.TestCase):
 
 
 class LegManipPpoValidationTests(unittest.TestCase):
-  def make_ppo_like(self, actor_obs=48, critic_obs=131, norm=False, output=12):
+  def make_ppo_like(self, actor_obs=51, critic_obs=131, norm=False, output=12):
     from src.tasks.leg_manip.rl.ppo import LegManipPPO
     holder = SimpleNamespace(
       actor=SimpleNamespace(is_recurrent=False, obs_dim=actor_obs, obs_groups=('actor',),
@@ -34,9 +34,13 @@ class LegManipPpoValidationTests(unittest.TestCase):
   def test_accepts_merged_critic_dimension(self):
     self.make_ppo_like(critic_obs=131)
 
-  def test_rejects_non_48_actor(self):
+  def test_rejects_old_48_actor(self):
     with self.assertRaises(ValueError):
-      self.make_ppo_like(actor_obs=45)
+      self.make_ppo_like(actor_obs=48)
+
+  def test_rejects_other_critic_layout(self):
+    with self.assertRaises(ValueError):
+      self.make_ppo_like(critic_obs=134)
 
   def test_rejects_obs_normalization(self):
     with self.assertRaises(ValueError):
