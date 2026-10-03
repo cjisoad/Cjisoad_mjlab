@@ -18,11 +18,16 @@ def classify_command_groups(term):
 
 def _gradient_vectors(ppo, observations, actions, old_log_prob, advantages):
   """Match the PPO/symmetry actor objectives without sampling or .backward()."""
-  parameters = tuple(p for p in ppo.actor.mlp.parameters() if p.requires_grad)
+  named_parameters = tuple((name, p) for name, p in ppo.actor.mlp.named_parameters() if p.requires_grad)
+  parameters = tuple(p for _, p in named_parameters)
+  network = ppo.actor.mlp
+  cache_names = ('_last_gate_weights', '_last_unmasked_gate_weights', '_last_component_outputs')
+  caches = {name: getattr(network, name) for name in cache_names if hasattr(network, name)}
   distribution = ppo.actor.distribution
   previous_distribution = distribution._distribution
   try:
     mean = ppo.actor(observations, stochastic_output=False)
+    routing = network._last_gate_weights.detach().squeeze(1).clone() if caches else None
     distribution.update(mean)
     log_prob = ppo.actor.get_output_log_prob(actions)
     ratio = torch.exp(log_prob - old_log_prob)
@@ -31,8 +36,20 @@ def _gradient_vectors(ppo, observations, actions, old_log_prob, advantages):
 
     def flatten(loss, retain_graph=False):
       gradients = torch.autograd.grad(loss, parameters, retain_graph=retain_graph, allow_unused=True)
-      return torch.cat([torch.zeros_like(p).reshape(-1) if g is None else g.detach().reshape(-1)
-                        for p, g in zip(parameters, gradients)])
+      flat = [torch.zeros_like(p).reshape(-1) if g is None else g.detach().reshape(-1)
+              for p, g in zip(parameters, gradients)]
+      result = {'': torch.cat(flat)}
+      parts = {}
+      for (name, _), gradient in zip(named_parameters, flat):
+        if name.startswith('gate.'):
+          part = 'router'
+        elif name.startswith('experts.'):
+          part = 'expert_' + name.split('.')[1]
+        else:
+          continue
+        parts.setdefault(part, []).append(gradient)
+      result.update({part: torch.cat(values) for part, values in parts.items()})
+      return result
 
     if ppo.sym_coef:
       def actor_mean(states):
@@ -45,9 +62,15 @@ def _gradient_vectors(ppo, observations, actions, old_log_prob, advantages):
     else:
       policy = flatten(surrogate)
       total = policy
-    return {'policy': policy, 'actor_total': total}
+    result = {objective + ('/' + part if part else ''): vector
+              for objective, values in (('policy', policy), ('actor_total', total))
+              for part, vector in values.items()}
+    if routing is not None:
+      result['routing'] = routing
+    return result
   finally:
     distribution._distribution = previous_distribution
+    for name, value in caches.items(): setattr(network, name, value)
 
 
 class GradientConflictDiagnostics:
@@ -111,8 +134,21 @@ class GradientConflictDiagnostics:
           metrics['used_samples/' + name] = float(indices.numel())
           vectors[name] = _gradient_vectors(ppo, observations[indices], actions[indices],
             log_prob[indices], advantages[indices])
+          routing = vectors[name].pop('routing', None)
+          if routing is not None:
+            prefix = 'moe_routing/' + name + '/'
+            for expert, weight in enumerate(routing.mean(0).tolist()):
+              metrics[prefix + 'expert_' + str(expert)] = weight
+            metrics[prefix + 'normalized_entropy'] = float(
+              -(routing * routing.clamp_min(1e-8).log()).sum(-1).mean()
+              / torch.log(routing.new_tensor(routing.shape[-1])))
+            metrics[prefix + 'mean_max_weight'] = float(routing.max(-1).values.mean())
+      objectives = ['policy', 'actor_total']
+      if hasattr(ppo.actor.mlp, 'experts'):
+        objectives += [objective + '/' + part for objective in ('policy', 'actor_total')
+          for part in ('router', *(f'expert_{i}' for i in range(len(ppo.actor.mlp.experts))))]
       for pair, first, second in self.PAIRS:
-        for objective in ('policy', 'actor_total'):
+        for objective in objectives:
           prefix = pair + '/' + objective + '/'
           metrics[prefix + 'valid'] = 0.
           if first not in vectors or second not in vectors:

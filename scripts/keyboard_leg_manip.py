@@ -147,6 +147,7 @@ def main():
   from mjlab.utils.torch import configure_torch_backends
   from src.tasks.leg_manip.env_cfg import leg_manip_env_cfg
   from src.tasks.leg_manip.rl import LegManipOnPolicyRunner, leg_manip_ppo_runner_cfg
+  from src.tasks.leg_manip.rl.moe import checkpoint_uses_moe, leg_manip_moe_ppo_runner_cfg
 
   keyboard = env = None
   try:
@@ -162,7 +163,10 @@ def main():
     env = ManagerBasedRlEnv(cfg, device=args.device)
     wrapped = RslRlVecEnvWrapper(env, clip_actions=10.)
     bridge = KeyboardCommandBridge(env.command_manager.get_term('twist'), env.num_envs)
-    runner = LegManipOnPolicyRunner(wrapped, asdict(leg_manip_ppo_runner_cfg()), device=args.device)
+    saved = torch.load(checkpoint, map_location='cpu', weights_only=False)
+    agent_cfg = leg_manip_moe_ppo_runner_cfg() if checkpoint_uses_moe(saved) else leg_manip_ppo_runner_cfg()
+    del saved
+    runner = LegManipOnPolicyRunner(wrapped, asdict(agent_cfg), device=args.device)
     runner.load(str(checkpoint), load_cfg={'actor': True}, strict=True, map_location=args.device)
     policy = runner.get_inference_policy(device=args.device)
     if args.smoke:
