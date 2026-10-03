@@ -1,4 +1,4 @@
-"""Quadruped gait must complete stance and swing together; preserve other modes."""
+"""Restored per-foot gait feedback, retaining approved tracking weights."""
 
 import unittest
 import torch
@@ -16,20 +16,20 @@ def contacts(env, term, values):
 
 
 class QuadrupedGaitTests(unittest.TestCase):
-  def test_stationary_all_contact_never_scores_even_during_stance_overlap(self):
-    env, term = make_env(101)
+  def test_restored_all_contact_credit_matches_original_phase_feedback(self):
+    env, term = make_env(4)
     term._command[:, 0] = .12
-    term.gait_phase[:] = torch.linspace(0., .999, 101)
-    contacts(env, term, torch.ones(101, 4))
-    torch.testing.assert_close(rewards.feet_gait(env), torch.zeros(101))
+    term.gait_phase[:] = torch.tensor([.25, .75, .03, .53])
+    contacts(env, term, torch.ones(4, 4))
+    torch.testing.assert_close(rewards.feet_gait(env), torch.tensor([.5, .5, 1., 1.]))
 
-  def test_correct_stance_and_swing_both_required(self):
+  def test_partial_contact_matches_restore_incremental_feedback(self):
     env, term = make_env(6)
     term._command[:, 0] = .12
     term.gait_phase[:] = torch.tensor([.25, .25, .25, .25, .75, .75])
     contacts(env, term, [[0, 1, 1, 0], [1, 1, 1, 0], [0, 0, 1, 0],
                          [0, 0, 0, 0], [1, 0, 0, 1], [1, 1, 0, 1]])
-    torch.testing.assert_close(rewards.feet_gait(env), torch.tensor([1., 0., 0., 0., 1., 0.]))
+    torch.testing.assert_close(rewards.feet_gait(env), torch.tensor([1., .75, .75, .5, 1., .75]))
 
   def test_zero_command_and_biped_group_still_disable_quad_gait(self):
     env, term = make_env(4)
@@ -58,7 +58,18 @@ class QuadrupedGaitTests(unittest.TestCase):
     term.blend[:] = 1.
     tripod = loco.feet_gait(env)
     term.blend[:] = blend
-    torch.testing.assert_close(rewards.feet_gait(env), tripod * blend)
+    torch.testing.assert_close(rewards.feet_gait(env), torch.lerp(torch.full((4,), .5), tripod, blend))
+
+  def test_all_contact_patterns_and_mode_blends_match_original_source(self):
+    env, term = make_env(64)
+    term._command[:, 0] = .12
+    term.gait_phase[:] = torch.linspace(0., .999, 64)
+    term.blend[:] = torch.linspace(0., 1., 64)
+    term.group_weight[:] = torch.tensor([0., .25, .75, 1.] * 16)
+    masks = ((torch.arange(64)[:, None] % 16) >> torch.arange(4)) % 2
+    contacts(env, term, masks)
+    expected = loco.feet_gait(env) * (1. - term.group_weight)
+    torch.testing.assert_close(rewards.feet_gait(env), expected)
 
 
 class TrackingWeightTests(unittest.TestCase):
