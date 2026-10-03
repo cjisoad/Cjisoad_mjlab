@@ -326,3 +326,25 @@ it only passes with a policy trained on this task.
   `strict=True`; a 550-step CPU rollout with terminations relaxed confirmed
   command flow, band latch, group ramp and phase sequence. Biped behavior
   itself requires training on this task.
+
+
+## Command-scaled horizontal velocity tracking
+
+The leg_manip quadruped and biped horizontal velocity kernels use
+`sigma = max(0.05, 0.75 * norm(command_xy))` and
+`exp(-sum((command_xy - actual_anchor_xy)^2) / sigma^2)`.
+The parameters are `min_std=0.05` m/s and `speed_ratio=0.75` in both reward configurations.
+The command magnitude includes both horizontal axes and is independent of direction;
+angular commands do not change this horizontal tolerance. There is no additional deadband.
+At zero command, an actual horizontal speed of 0.08 m/s scores about 0.0773.
+At command 0.12 m/s, actual speeds 0, 0.06 and 0.12 m/s score about
+0.1690, 0.6412 and 1.0 before group weights and other gates.
+Higher commands can increase sigma above the old 0.5 m/s value; this is relative
+error scaling, not a global upper bound on tolerance.
+
+The LOCO vertical damping, tripod kernel/interpolation, biped height gate,
+group weights and angular tracking are unchanged. Standalone loco_pedipulation
+and Pedipulation source rewards are unchanged. Policy observations, network shapes,
+exploration and curriculum are unchanged, so existing checkpoints remain loadable.
+This affects future learning rewards; loading an old checkpoint alone does not
+teach it improved tracking or reduce deterministic playback drift.

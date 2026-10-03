@@ -57,7 +57,7 @@ def leg_manip_env_cfg(play=False):
     ('alive', rewards.alive, 1., {}),
     # LOCO group: quadruped and tripod, weighted by 1 - w.
     ('track_linear_velocity', rewards.track_linear_velocity, 1.,
-      {'std': .5, 'tripod_std': .15, 'tripod_weight': 2.}),
+      {'std': .5, 'tripod_std': .15, 'tripod_weight': 2., 'min_std': .05, 'speed_ratio': .75}),
     ('track_angular_velocity', rewards.track_angular_velocity, 1., {}),
     ('pose', rewards.mode_posture, 1., {
       'asset_cfg': SceneEntityCfg('robot', joint_names='.*'),
@@ -89,7 +89,8 @@ def leg_manip_env_cfg(play=False):
     # BIPED group: rear-leg stand, weighted by w. biped_base_height writes the
     # per-environment height gate and must stay first in this group.
     ('biped_base_height', rewards.biped_base_height, 1.5, {}),
-    ('biped_tracking_lin_vel', rewards.biped_tracking_lin_vel, 2.5, {}),
+    ('biped_tracking_lin_vel', rewards.biped_tracking_lin_vel, 2.5,
+      {'min_std': .05, 'speed_ratio': .75}),
     ('biped_tracking_ang_vel', rewards.biped_tracking_ang_vel, 2.5, {}),
     ('biped_lin_vel_z', rewards.biped_lin_vel_z, .3, {}),
     ('biped_ang_vel_xy', rewards.biped_ang_vel_xy, .2, {}),

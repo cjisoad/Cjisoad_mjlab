@@ -81,7 +81,26 @@ def biped_fraction(env):
 
 
 # LOCO group: loco_pedipulation terms weighted by 1 - w.
-track_linear_velocity = loco_group(loco.track_linear_velocity)
+def _linear_tracking_std(command, min_std=.05, speed_ratio=.75):
+  """Use horizontal command magnitude, including reverse and zero commands."""
+  return (command[:, :2].norm(dim=-1) * speed_ratio).clamp_min(min_std)
+
+
+def track_linear_velocity(env, std=.5, tripod_std=.15, tripod_weight=2.,
+                          min_std=.05, speed_ratio=.75):
+  term = _term(env)
+  actual = to_anchor(term.basis_w, env.scene['robot'].data.root_link_lin_vel_w)
+  error = (term.command[:, :2] - actual[:, :2]).square().sum(-1)
+  tracking_std = _linear_tracking_std(term.command, min_std, speed_ratio)
+  quad = torch.exp(-error / tracking_std.square())
+  # Keep the source tripod kernel and the LOCO vertical damping unchanged.
+  tripod = tripod_weight * torch.exp(-error / tripod_std**2)
+  moving = term.command[:, :2].norm(dim=-1) > .05
+  horizontal = torch.lerp(quad, tripod, term.blend * moving)
+  return (horizontal * torch.exp(-2. * actual[:, 2].square() / std**2)
+          * (1. - group_weight(env)))
+
+
 track_angular_velocity = loco_group(loco.track_angular_velocity)
 stand_still = loco_group(loco.stand_still)
 feet_gait = loco_group(loco.feet_gait)
@@ -108,11 +127,12 @@ def biped_base_height(env):
   return score * group_weight(env)
 
 
-def biped_tracking_lin_vel(env):
+def biped_tracking_lin_vel(env, min_std=.05, speed_ratio=.75):
   term = _term(env)
   velocity = to_anchor(term.basis_w, env.scene['robot'].data.root_link_lin_vel_w)
   error = (term.command[:, :2] - velocity[:, :2]).square().sum(-1)
-  return torch.exp(-error / .25) * _gate(env) * group_weight(env)
+  tracking_std = _linear_tracking_std(term.command, min_std, speed_ratio)
+  return torch.exp(-error / tracking_std.square()) * _gate(env) * group_weight(env)
 
 
 def biped_tracking_ang_vel(env):
