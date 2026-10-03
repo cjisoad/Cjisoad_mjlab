@@ -15,6 +15,7 @@ from src.tasks.loco_pedipulation.mdp import rewards as loco
 from src.tasks.velocity import mdp as velocity_mdp
 
 from .anchor_frame import to_anchor
+from .commands import LOWER
 
 ROBOT = SceneEntityCfg('robot')
 STAND_GOAL = SceneEntityCfg('robot', site_names=('stand_goal',), preserve_order=True)
@@ -54,7 +55,9 @@ def fr_position_tracking(env, std=.05):
   return loco.fr_position_tracking(env, std=std) * factor
 fr_ground_contact = loco.fr_ground_contact
 manipulation_fraction = loco.manipulation_fraction
-landing_failed = loco.landing_failed
+def landing_failed(env):
+  term = env.command_manager.get_term('twist')
+  return (term.phase == LOWER) & (term.elapsed > term.trajectory_duration + term.cfg.landing_timeout)
 is_terminated = velocity_mdp.is_terminated
 joint_acc_l2 = velocity_mdp.joint_acc_l2
 action_rate_l2 = velocity_mdp.action_rate_l2

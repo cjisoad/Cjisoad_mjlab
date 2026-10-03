@@ -30,7 +30,7 @@ from src.tasks.pedipulation.robot import NONFOOT_BODIES, get_stand_robot_cfg
 from src.tasks.velocity import mdp as velocity_mdp
 
 from .constants import STAGE_BIPED
-from .mdp import curriculums, observations, rewards, terminations
+from .mdp import curriculums, observations, rewards, terminations, events
 from .mdp.commands import LegManipCommandCfg
 
 FOOT_NAMES = ('FL', 'FR', 'RL', 'RR')
@@ -121,8 +121,8 @@ def leg_manip_env_cfg(play=False):
     'reset_robot_joints': EventTermCfg(func=velocity_mdp.reset_joints_by_offset, mode='reset',
       params={'position_range': (0., 0.), 'velocity_range': (0., 0.),
               'asset_cfg': SceneEntityCfg('robot', joint_names=('.*',))}),
-    'push_robot': EventTermCfg(func=velocity_mdp.push_by_setting_velocity, mode='interval',
-      interval_range_s=(5., 6.),
+    'push_robot': EventTermCfg(func=events.push_robot, mode='interval',
+      interval_range_s=(10., 15.),
       params={'velocity_range': {'x': (-.15, .15), 'y': (-.15, .15), 'yaw': (-.2, .2)}}),
   }
   if play:

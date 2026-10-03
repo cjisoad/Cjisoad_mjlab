@@ -7,7 +7,8 @@ CURRICULUM_GROUPS = ('quad_stance', 'biped_stance', 'quad_moving', 'biped_moving
 def manipulation_curriculum(env, env_ids):
   term = env.command_manager.get_term('twist')
   cfg = term.cfg
-  if cfg.curriculum_enabled and term.stage < STAGE_BIPED:
+  # Stage0 is promoted exclusively by independent mean-policy stance trials.
+  if cfg.curriculum_enabled and 0 < term.stage < STAGE_BIPED:
     # All capability samples were streamed in their own stage/window. Episode
     # membership is also window-local; a long successful prefix cannot dilute
     # a terminal failure to one bad timestep among thousands of good samples.

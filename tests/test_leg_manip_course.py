@@ -112,7 +112,8 @@ class CourseRewardTests(unittest.TestCase):
     self.assertTrue(term.stance_ready(biped=True).all())
 
 class CourseCurriculumTests(unittest.TestCase):
-  def qualified(self, stage=0):
+  # Training-window gates now apply only to the walking course.
+  def qualified(self, stage=1):
     env, term = make_env(stage=stage, min_stage_steps=100, min_curriculum_episodes=4)
     env.common_step_counter = 100
     term.group_survival[:] = torch.tensor((20., 1.))
@@ -129,7 +130,7 @@ class CourseCurriculumTests(unittest.TestCase):
     term.curriculum_window[1, 1] = 0.
     self.decide(env, term)
     self.assertEqual(term.pass_streak, 0)
-    self.assertEqual(term.stage, 0)
+    self.assertEqual(term.stage, 1)
 
   def test_both_switch_directions_must_succeed(self):
     for row in (0, 1):
@@ -155,7 +156,8 @@ class CourseCurriculumTests(unittest.TestCase):
   def test_two_passing_full_windows_required(self):
     env, term = self.qualified()
     self.decide(env, term)
-    self.assertEqual(term.stage, 0)
+    self.assertEqual(term.stage, 1)
+    self.assertEqual(term.velocity_level, 0)
     self.assertEqual(term.pass_streak, 1)
     term.group_survival[:] = torch.tensor((20., 1.))
     term.curriculum_window[:] = torch.tensor((200., 190., 10.))
@@ -164,6 +166,7 @@ class CourseCurriculumTests(unittest.TestCase):
     env.common_step_counter = 200
     self.decide(env, term)
     self.assertEqual(term.stage, 1)
+    self.assertEqual(term.velocity_level, 1)
     self.assertEqual(term.pass_streak, 0)
 
   def test_stage_one_requires_both_moving_groups_and_all_velocity_levels(self):
@@ -303,7 +306,7 @@ class CourseLoggingTests(unittest.TestCase):
 
 class CourseStreamingTests(unittest.TestCase):
   def test_per_step_groups_do_not_import_completed_episode_stats(self):
-    env, term = make_env(stage=0)
+    env, term = make_env(stage=1)
     term.phase[:] = 0
     term.elapsed[:] = 2.
     term.enabled[:] = False
@@ -395,8 +398,8 @@ class CourseReviewRegressionTests(unittest.TestCase):
     term.mode[:] = True
     term.record_outcomes()
     extras = term.reset(torch.arange(4))
-    self.assertEqual(extras['biped_stationary_samples'], 4.)
-    self.assertEqual(extras['tripod_stationary_samples'], 0.)
+    self.assertEqual(extras['episode_biped_stationary_samples'], 4.)
+    self.assertEqual(extras['episode_tripod_stationary_samples'], 0.)
 
 class CourseGroupSurvivalTests(unittest.TestCase):
   def test_biped_moving_failures_cannot_be_hidden_by_global_survival(self):

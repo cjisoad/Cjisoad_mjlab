@@ -67,6 +67,8 @@ class LegManipCommandCfg(CommandTermCfg):
   initial_stage: int = 0
   min_stage_steps: int = 12000
   min_curriculum_episodes: int = 64
+  stance_eval_interval: int = 500
+  stage0_light_push: bool = False
 
   def build(self, env):
     return LegManipCommand(self, env)
@@ -88,6 +90,8 @@ class LegManipCommand(CommandTerm):
     if (cfg.passing_windows < 2 or cfg.min_stage_steps <= 0 or cfg.min_curriculum_episodes <= 0
         or cfg.min_group_samples <= 0 or cfg.min_group_episodes <= 0 or cfg.min_switch_attempts <= 0):
       raise ValueError('Course needs positive windows/sample counts and at least two passing windows')
+    if not isinstance(cfg.stance_eval_interval, int) or cfg.stance_eval_interval <= 0:
+      raise ValueError('Stance evaluation interval must be a positive integer')
     for bounds in (cfg.lin_vel_x, cfg.lin_vel_y, cfg.ang_vel_z,
                    cfg.biped_lin_vel_x, cfg.biped_ang_vel_z):
       if not all(math.isfinite(v) for v in bounds) or bounds[0] > bounds[1]:
@@ -123,6 +127,7 @@ class LegManipCommand(CommandTerm):
     self.enabled = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
     self._operation = torch.zeros_like(self.enabled)
     self.manual = torch.zeros_like(self.enabled)
+    self._source_manipulating = torch.zeros_like(self.enabled)
     self.mode = torch.zeros_like(self.enabled)
     self.group_weight = torch.zeros(self.num_envs, device=self.device)
     self.biped_exiting = torch.zeros_like(self.enabled)
@@ -139,6 +144,8 @@ class LegManipCommand(CommandTerm):
     self.group_survival = torch.zeros(4, 2, device=self.device)
     self.course_episode_groups = torch.zeros(self.num_envs, 4, dtype=torch.bool, device=self.device)
     self.last_decision = {}
+    self.last_stance_eval_iteration = -1
+    self.walk_started_iteration = -1
     self.pending_switch = torch.full((self.num_envs,), -1, dtype=torch.long, device=self.device)
     self.switch_elapsed = torch.zeros(self.num_envs, device=self.device)
     self.endpoint_hold = torch.zeros(self.num_envs, device=self.device)
@@ -165,9 +172,16 @@ class LegManipCommand(CommandTerm):
     """A nominal raised FR reference remains a stance target, not operation."""
     return self.enabled & (self.manual | self._operation)
 
-  def stance_ready(self, *, biped, moving=False, command=None):
+  @property
+  def trajectory_duration(self):
+    return torch.where(self.manual | self._operation,
+      torch.full_like(self.elapsed, self.cfg.reach_time),
+      torch.full_like(self.elapsed, self.cfg.stance_transition_time))
+
+  def stance_ready(self, *, biped, moving=False, command=None, manipulating=None):
     """Whole-body endpoint criterion; FR accuracy alone cannot certify stance."""
     command = self.command if command is None else command
+    manipulating = self.manipulating if manipulating is None else manipulating
     data = self.robot.data
     gravity = data.projected_gravity_b
     height = data.root_link_pos_w[:, 2]
@@ -183,7 +197,7 @@ class LegManipCommand(CommandTerm):
       target = data.joint_pos.new_tensor(DESIRED_ANGLES).expand_as(data.joint_pos)
       pose_error = (data.joint_pos - target).abs()
       pose_error = pose_error.clone()
-      pose_error[:, self.fr_joint_ids] *= (~self.manipulating)[:, None]
+      pose_error[:, self.fr_joint_ids] *= (~manipulating)[:, None]
       pose = pose_error.mean(-1) < (.4 if moving else .25)
       support = contacts[:, 2:].any(-1) if moving else contacts[:, 2:].all(-1)
       return ((-gravity[:, 0] > math.cos(math.radians(15.)))
@@ -235,7 +249,7 @@ class LegManipCommand(CommandTerm):
     extras = {}
     self.interrupt_switches(env_ids)
     lower = self.phase[env_ids] == LOWER
-    timed_out = lower & (self.elapsed[env_ids] > self.cfg.reach_time + self.cfg.landing_timeout)
+    timed_out = lower & (self.elapsed[env_ids] > self.trajectory_duration[env_ids] + self.cfg.landing_timeout)
     self.training_metrics.landing_event('timeouts', timed_out)
     self.training_metrics.landing_event('interrupted', lower & ~timed_out)
     stats = self.stats[env_ids].sum(0)
@@ -245,8 +259,8 @@ class LegManipCommand(CommandTerm):
       extras[key] = (stats[numerator] / stats[denominator].clamp_min(1)).item()
     tracking = self.episode_tracking[env_ids].sum(0)
     for i, group in enumerate(GROUPS):
-      extras[group + '_samples'] = float(tracking[i, 0])
-      extras[group + '_velocity_error'] = float(tracking[i, 1] / tracking[i, 0].clamp_min(1))
+      extras['episode_' + group + '_samples'] = float(tracking[i, 0])
+      extras['episode_' + group + '_velocity_error'] = float(tracking[i, 1] / tracking[i, 0].clamp_min(1))
     for mode, rows in (('quad', (0, 3)), ('tripod', (1, 4)), ('biped', (2, 5))):
       totals = tracking[list(rows)].sum(0)
       extras[mode + '_velocity_error'] = float(totals[1] / totals[0].clamp_min(1))
@@ -264,6 +278,7 @@ class LegManipCommand(CommandTerm):
     self.enabled[env_ids] = False
     self._operation[env_ids] = False
     self.manual[env_ids] = False
+    self._source_manipulating[env_ids] = False
     self.mode[env_ids] = False
     self.group_weight[env_ids] = 0.
     self.biped_exiting[env_ids] = False
@@ -423,7 +438,7 @@ class LegManipCommand(CommandTerm):
       self.stance_ready(biped=True) & (self.phase == HOLD),
       self.stance_ready(biped=False) & (self.phase == QUAD))
     endpoint &= pending & ~failed & ~timeout
-    self.endpoint_hold = torch.where(endpoint, self.endpoint_hold + self._env.step_dt, 0.)
+    self.endpoint_hold.copy_(torch.where(endpoint, self.endpoint_hold + self._env.step_dt, 0.))
     succeeded = pending & (self.endpoint_hold + 1e-6 >= self.cfg.switch_hold_time)
     for direction in (0, 1):
       direction_mask = self.pending_switch == direction
@@ -459,9 +474,7 @@ class LegManipCommand(CommandTerm):
     self._target_changed.zero_()
 
     reach, lower = self.phase == REACH, self.phase == LOWER
-    duration = torch.where(self.manual | self._operation,
-      torch.full_like(self.elapsed, self.cfg.reach_time),
-      torch.full_like(self.elapsed, self.cfg.stance_transition_time))
+    duration = self.trajectory_duration
     progress = smoothstep(self.elapsed / duration)
     # The landing height follows the actual base height over the flat plane.
     self.goal[lower, 2] = landing[lower, 2]
@@ -470,7 +483,7 @@ class LegManipCommand(CommandTerm):
     self.blend[reach] = torch.lerp(self._blend_start, torch.ones_like(progress), progress)[reach]
     self._begin(reach & (self.elapsed >= duration), HOLD)
     landed = lower & self.contacts[:, self.fr_index]
-    self.contact_time = torch.where(landed, self.contact_time + dt, 0.)
+    self.contact_time.copy_(torch.where(landed, self.contact_time + dt, 0.))
     confirmed = lower & (self.elapsed >= duration) & (self.contact_time >= self.cfg.contact_confirmation)
     self.stats[:, 9] += confirmed
     self.training_metrics.landing_event('confirmed', confirmed)
@@ -487,7 +500,7 @@ class LegManipCommand(CommandTerm):
     step = dt / self.cfg.velocity_ramp_time
     self._command[:, :3] += (desired - self._command[:, :3]).clamp(-step, step)
     period = .6 + .6 * self.blend
-    self.gait_phase = (self.gait_phase + dt / period) % 1.
+    self.gait_phase.copy_((self.gait_phase + dt / period) % 1.)
 
     # Reward-group hysteresis on commanded target height; phases are untouched.
     dz = self.requested_offset[:, 2]
@@ -500,8 +513,10 @@ class LegManipCommand(CommandTerm):
       self.interrupt_switches(changed_mode.nonzero().flatten())
       for direction, mask in ((0, changed_mode & self.mode), (1, changed_mode & ~self.mode)):
         source_moving = previous_command.norm(dim=-1) > .05
-        static_ready = self.stance_ready(biped=direction == 1, command=previous_command)
-        moving_ready = self.stance_ready(biped=direction == 1, moving=True, command=previous_command)
+        static_ready = self.stance_ready(biped=direction == 1, command=previous_command,
+          manipulating=self._source_manipulating)
+        moving_ready = self.stance_ready(biped=direction == 1, moving=True, command=previous_command,
+          manipulating=self._source_manipulating)
         certified = torch.where(source_moving, moving_ready, static_ready)
         self.pending_switch[mask & certified] = direction
         self.switch_window[direction, 0] += mask.sum()
@@ -523,6 +538,7 @@ class LegManipCommand(CommandTerm):
     finished = self.mode | recovered | (self.biped_exit_elapsed >= self.cfg.biped_exit_timeout)
     self.biped_exiting &= ~finished
     self.biped_exit_elapsed[~self.biped_exiting] = 0.
+    self._source_manipulating.copy_(self.manipulating)
 
   def compute(self, dt):
     self._read_gui()

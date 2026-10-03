@@ -1,6 +1,7 @@
 """Fused-task PPO with 51D velocity-aware actor observations and symmetry."""
 
 from typing import Any
+import torch
 
 from rsl_rl.algorithms import PPO
 
@@ -21,6 +22,13 @@ class LegManipPPO(PedipulationPPO):
     PPO.__init__(self, *args, **kwargs)
     self.sym_coef = sym_coef
     self.validate(self)
+
+  def update(self):
+    metrics = super().update()
+    distribution = self.actor.distribution
+    with torch.no_grad():
+      distribution.std_param.clamp_(.02, distribution.max_std)
+    return metrics
 
   @staticmethod
   def validate(ppo) -> None:

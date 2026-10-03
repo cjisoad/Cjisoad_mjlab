@@ -5,10 +5,11 @@ from src.tasks.loco_pedipulation.mdp.metrics import LANDING_EVENTS
 from ..mdp.metrics import COURSE_FIELDS, GROUPS, SWITCH_EVENTS
 
 class CourseLogger:
-  def __init__(self, logger, metrics, distributed=False):
+  def __init__(self, logger, metrics, distributed=False, iteration_callback=None):
     self.logger, self.metrics, self.distributed = logger, metrics, distributed
     self.landing_totals = torch.zeros_like(metrics.landing)
     self.switch_totals = torch.zeros_like(metrics.switches)
+    self.iteration_callback = iteration_callback
 
   def __getattr__(self, name):
     return getattr(self.logger, name)
@@ -21,6 +22,8 @@ class CourseLogger:
       self.switch_totals[:, 3] += (self.switch_totals[:, 0] - self.switch_totals[:, 1:].sum(-1)).clamp_min(0)
 
   def log(self, *, it, **kwargs):
+    if self.iteration_callback is not None:
+      self.iteration_callback(it)
     values = self.metrics.drain()
     if self.distributed:
       dist.all_reduce(values, op=dist.ReduceOp.SUM)

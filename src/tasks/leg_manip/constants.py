@@ -14,7 +14,7 @@ STAGE_STANCE = 0
 STAGE_WALK = 1
 STAGE_OPERATION = 2
 STAGE_BIPED = STAGE_OPERATION  # Public play/backward constant alias, not a checkpoint migration.
-COURSE_VERSION = 1
+COURSE_VERSION = 2
 COURSE_NAME = "stance_walk_operation"
 
 LEGACY_ACTOR_DIM = 48
