@@ -8,6 +8,7 @@ from rsl_rl.algorithms import PPO
 from src.tasks.pedipulation.rl.ppo import PedipulationPPO
 from ..constants import ACTOR_OBS_DIM, CRITIC_OBS_DIM
 from .symmetry import exact_symmetry_loss
+from .gradient_diagnostics import GradientConflictDiagnostics
 
 
 class LegManipPPO(PedipulationPPO):
@@ -15,15 +16,27 @@ class LegManipPPO(PedipulationPPO):
 
   _symmetry_loss = staticmethod(exact_symmetry_loss)
 
-  def __init__(self, *args: Any, sym_coef: float = 1.0, **kwargs: Any) -> None:
+  def __init__(self, *args: Any, sym_coef: float = 1.0,
+               gradient_diagnostics_interval: int = 20,
+               gradient_diagnostics_max_samples: int = 512, **kwargs: Any) -> None:
     if kwargs.get('symmetry_cfg') is not None:
       raise ValueError('LegManipPPO supplies its own symmetry loss; symmetry_cfg must be None')
     # Skip PedipulationPPO.__init__'s hardcoded 89-dimensional critic check.
     PPO.__init__(self, *args, **kwargs)
     self.sym_coef = sym_coef
     self.validate(self)
+    self.gradient_diagnostics = GradientConflictDiagnostics(
+      gradient_diagnostics_interval, gradient_diagnostics_max_samples)
+    self.gradient_command_term = None
+    self.last_gradient_diagnostics = None
+
+  def act(self, obs):
+    if self.gradient_command_term is not None:
+      self.gradient_diagnostics.capture(self.gradient_command_term)
+    return super().act(obs)
 
   def update(self):
+    self.last_gradient_diagnostics = self.gradient_diagnostics.evaluate(self) or None
     metrics = super().update()
     distribution = self.actor.distribution
     with torch.no_grad():

@@ -348,3 +348,47 @@ and Pedipulation source rewards are unchanged. Policy observations, network shap
 exploration and curriculum are unchanged, so existing checkpoints remain loadable.
 This affects future learning rewards; loading an old checkpoint alone does not
 teach it improved tracking or reduce deterministic playback drift.
+
+## Quadruped/biped gradient diagnostics
+
+`LegManipPPO` observes shared actor MLP gradients before the first PPO update
+on a completed rollout. The default interval is 20 updates (including the first
+update after startup/resume), with at most 512 randomly selected samples per
+group. Set `agent.algorithm.gradient_diagnostics_interval=0` to disable it;
+`gradient_diagnostics_max_samples` controls the sample cap.
+
+Labels are captured before each action: quadruped means QUAD, mode=false,
+group_weight<=0.01; biped means HOLD, mode=true, group_weight>=0.99.
+Reward transitions are excluded. Stance quality is not a filter: unsuccessful
+attempts in an assigned mode still contribute. The existing command convention
+splits stand/moving at norm(command[vx,vy,wz])>0.05. These are command contexts,
+not proof that the robot actually achieved either stance or speed.
+
+Scalars under `GradConflict/` compare quad vs biped, both stand groups, both
+moving groups, and stand vs moving within each mode. For each pair:
+
+- `policy/cosine` compares the actual PPO clipped surrogate gradients using the
+  rollout's globally normalized advantages, without separate group normalization.
+- `actor_total/cosine` adds the existing weighted exact symmetry loss to each
+  group's policy objective.
+- `first_norm` and `second_norm` give gradient sizes; `samples/` records available
+  context samples and `used_samples/` records the sampled subset size.
+- Cosine <0 means this measurement has opposing group update directions; >0
+  means aligned directions; near 0 means near orthogonal directions.
+  `negative_fraction` counts negative cosines among valid diagnostic measurements
+  since this process started, and `measurements` reports that denominator.
+- `valid=0` means a group is missing, has fewer than two samples, or has effectively
+  zero gradient. No artificial zero cosine or negative fraction is logged.
+
+The measured parameters are the shared actor mean MLP, excluding the independent
+critic and Gaussian standard deviation. State-independent entropy contributes
+no gradient to this MLP. Advantages can contain future rewards from mode changes,
+so these are sampled local gradient comparisons, not an isolated causal test or
+proof of why tracking regresses. Interpret cosine together with gradient sizes,
+sample counts, repeated measurements and task performance.
+
+Diagnostics use autograd.grad and a private random generator, restore the actor's
+distribution object, and do not alter gradients, optimizer state, advantages or
+training random streams. They do not project or modify the training update.
+The current diagnostic supports the task's single-GPU, globally normalized
+advantage configuration. A resume starts a new diagnostic measurement count.

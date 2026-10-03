@@ -1,16 +1,22 @@
 """Fused-task runner: curriculum persistence, manipulation logging, fused PPO."""
 
-from dataclasses import replace
+from dataclasses import asdict, dataclass
 
 import torch
 
 from mjlab.rl.runner import MjlabOnPolicyRunner
 
 from src.tasks.loco_pedipulation.rl import LocoPedipulationOnPolicyRunner
-from src.tasks.pedipulation.rl.config import pedipulation_ppo_runner_cfg
+from src.tasks.pedipulation.rl.config import PedipulationPpoAlgorithmCfg, pedipulation_ppo_runner_cfg
 from .checkpoint import observation_layout, course_state, restore_course_state, validate_course_state
 from .metrics import CourseLogger
 from .stance_evaluation import evaluate_stances, apply_stance_evaluation
+
+
+@dataclass
+class LegManipPpoAlgorithmCfg(PedipulationPpoAlgorithmCfg):
+  gradient_diagnostics_interval: int = 20
+  gradient_diagnostics_max_samples: int = 512
 
 
 def leg_manip_ppo_runner_cfg():
@@ -22,8 +28,8 @@ def leg_manip_ppo_runner_cfg():
   cfg.upload_model = True
   cfg.actor.distribution_cfg = {**cfg.actor.distribution_cfg,
     'class_name': 'src.tasks.leg_manip.rl.distribution:StanceGaussianDistribution', 'init_std': .2}
-  cfg.algorithm = replace(cfg.algorithm,
-                          class_name='src.tasks.leg_manip.rl.ppo:LegManipPPO', entropy_coef=.001)
+  cfg.algorithm = LegManipPpoAlgorithmCfg(**{**asdict(cfg.algorithm),
+    'class_name': 'src.tasks.leg_manip.rl.ppo:LegManipPPO', 'entropy_coef': .001})
   return cfg
 
 
@@ -34,11 +40,21 @@ class LegManipOnPolicyRunner(LocoPedipulationOnPolicyRunner):
     # Bypass the shared logger constructor: it assumes a two-row tracking ABI.
     MjlabOnPolicyRunner.__init__(self, env, train_cfg, log_dir, device)
     term = self.env.unwrapped.command_manager.get_term('twist')
+    self.alg.gradient_command_term = term
     self.logger = CourseLogger(self.logger, term.training_metrics, self.is_distributed, self._iteration_end)
 
   def _iteration_end(self, it):
     term = self.env.unwrapped.command_manager.get_term('twist')
     iteration = it + 1
+    diagnostics = getattr(self.alg, 'last_gradient_diagnostics', None)
+    if diagnostics:
+      if getattr(self.logger, 'writer', None) is not None:
+        for key, value in diagnostics.items():
+          self.logger.writer.add_scalar('GradConflict/' + key, value, it)
+      cosine = diagnostics.get('quad_biped/policy/cosine')
+      print(f'[grad_diag] iteration={iteration}, quad_biped_policy_cosine={cosine}, '
+        f'quad_samples={diagnostics.get("samples/quad", 0)}, '
+        f'biped_samples={diagnostics.get("samples/biped", 0)}', flush=True)
     if (term.cfg.curriculum_enabled and term.stage == 0
         and iteration > term.last_stance_eval_iteration and iteration % term.cfg.stance_eval_interval == 0):
       # Only rank0 simulates evaluation; all ranks apply the same course decision.
