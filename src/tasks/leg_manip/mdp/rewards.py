@@ -103,7 +103,25 @@ def track_linear_velocity(env, std=.5, tripod_std=.15, tripod_weight=2.,
 
 track_angular_velocity = loco_group(loco.track_angular_velocity)
 stand_still = loco_group(loco.stand_still)
-feet_gait = loco_group(loco.feet_gait)
+
+
+def feet_gait(env):
+  """Score complete quadruped stance/swing pairs; retain source tripod gait."""
+  term = _term(env)
+  phase = term.gait_phase[:, None]
+  contact = term.contacts
+  quad_stance = ((phase + phase.new_tensor((.5, 0., 0., .5))) % 1.) < .56
+  # No partial credit for planted stance feet while swing feet stay planted.
+  # All-stance overlap cannot count as a completed swing either.
+  quad = ((quad_stance == contact).all(-1) & (~quad_stance).any(-1)).float()
+  tripod_stance = ((phase + phase.new_tensor((0., 0., 2. / 3., 1. / 3.))) % 1.) < .8
+  weights = torch.ones_like(contact, dtype=torch.float32)
+  weights[:, term.fr_index] = 0.
+  tripod = ((tripod_stance == contact).float() * weights).sum(-1) / 3.
+  moving = term.command[:, :3].norm(dim=-1) > .05
+  return torch.lerp(quad, tripod, term.blend) * moving * (1. - group_weight(env))
+
+
 foot_clearance = loco_group(loco.foot_clearance)
 foot_slip = loco_group(loco.foot_slip)
 soft_landing = loco_group(loco.soft_landing)

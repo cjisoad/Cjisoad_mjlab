@@ -56,8 +56,9 @@ def leg_manip_env_cfg(play=False):
     ('collision', rewards.collision, -2., {}),
     ('alive', rewards.alive, 1., {}),
     # LOCO group: quadruped and tripod, weighted by 1 - w.
-    ('track_linear_velocity', rewards.track_linear_velocity, 1.,
-      {'std': .5, 'tripod_std': .15, 'tripod_weight': 2., 'min_std': .05, 'speed_ratio': .75}),
+    # Preserve tripod's effective weight: 2.5 * 0.8 = 2.0.
+    ('track_linear_velocity', rewards.track_linear_velocity, 2.5,
+      {'std': .5, 'tripod_std': .15, 'tripod_weight': .8, 'min_std': .05, 'speed_ratio': .75}),
     ('track_angular_velocity', rewards.track_angular_velocity, 1., {}),
     ('pose', rewards.mode_posture, 1., {
       'asset_cfg': SceneEntityCfg('robot', joint_names='.*'),
