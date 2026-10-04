@@ -11,7 +11,7 @@ from tests import test_leg_manip_gradient_diagnostics as diagnostic_tests
 class DenseMoETests(unittest.TestCase):
   def module(self):
     try:
-      return importlib.import_module('src.tasks.leg_manip.rl.moe')
+      return importlib.import_module('src.tasks.moe_leg_manip.rl.moe')
     except ModuleNotFoundError:
       self.fail('Dense actor MoE integration is missing')
 
@@ -20,7 +20,7 @@ class DenseMoETests(unittest.TestCase):
     obs = TensorDict({'actor': torch.randn(8, 51), 'critic': torch.randn(8, 131)}, batch_size=[8])
     actor = module.DenseMoEActor(obs, {'actor': ['actor'], 'critic': ['critic']}, 'actor', 12,
       hidden_dims=(16, 8), gate_hidden_dims=(8,), distribution_cfg={
-        'class_name': 'src.tasks.leg_manip.rl.distribution:StanceGaussianDistribution',
+        'class_name': 'src.tasks.moe_leg_manip.rl.distribution:StanceGaussianDistribution',
         'init_std': .2, 'std_type': 'scalar'})
     return actor, obs
 
@@ -46,10 +46,10 @@ class DenseMoETests(unittest.TestCase):
 
   def test_actor_only_config_preserves_legacy_and_training_hyperparameters(self):
     self.module()
-    from src.tasks.leg_manip.rl import leg_manip_ppo_runner_cfg
+    from src.tasks.moe_leg_manip.rl import leg_manip_ppo_runner_cfg
     from mjlab.tasks.registry import load_rl_cfg, load_env_cfg
     original = asdict(leg_manip_ppo_runner_cfg())
-    moe = asdict(load_rl_cfg('leg_manip_moe'))
+    moe = asdict(load_rl_cfg('moe_leg_manip'))
     self.assertEqual(moe['critic'], original['critic'])
     self.assertEqual(moe['algorithm'], original['algorithm'])
     self.assertEqual(moe['actor']['distribution_cfg'], original['actor']['distribution_cfg'])
@@ -58,14 +58,14 @@ class DenseMoETests(unittest.TestCase):
     self.assertFalse(moe['actor']['use_explicit_expert'])
     self.assertFalse(moe['resume'])
     self.assertEqual(load_rl_cfg('leg_manip').actor.class_name, 'MLPModel')
-    self.assertEqual(load_env_cfg('leg_manip_moe').commands['twist'].initial_stage, 0)
+    self.assertEqual(load_env_cfg('moe_leg_manip').commands['twist'].initial_stage, 0)
 
   def ppo(self):
     ppo = diagnostic_tests.GradientDiagnosticsTests().make_ppo()
     actor, _ = self.actor()
-    ppo.actor = actor
-    ppo.optimizer = torch.optim.Adam(list(actor.parameters()) + list(ppo.critic.parameters()), lr=1e-3)
-    ppo.sym_coef = .7
+    from src.tasks.moe_leg_manip.rl.ppo import LegManipPPO
+    ppo = LegManipPPO(actor, ppo.critic, ppo.storage, num_learning_epochs=1, num_mini_batches=1,
+      sym_coef=.7, schedule='fixed', desired_kl=None)
     with torch.no_grad():
       flat = ppo.storage.observations.flatten(0, 1)
       mean = actor(flat)
@@ -76,7 +76,7 @@ class DenseMoETests(unittest.TestCase):
 
   def test_diagnostics_log_routing_and_each_expert_without_changing_caches(self):
     self.module()
-    from src.tasks.leg_manip.rl.gradient_diagnostics import GradientConflictDiagnostics
+    from src.tasks.moe_leg_manip.rl.gradient_diagnostics import GradientConflictDiagnostics
     ppo = self.ppo()
     caches = {n: getattr(ppo.actor.mlp, n) for n in (
       '_last_gate_weights', '_last_unmasked_gate_weights', '_last_component_outputs')}

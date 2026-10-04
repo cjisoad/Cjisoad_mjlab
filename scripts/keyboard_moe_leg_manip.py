@@ -1,4 +1,4 @@
-"""Native MuJoCo keyboard playback for a Leg Manip checkpoint.
+"""Native MuJoCo keyboard playback for a MoE Leg Manip checkpoint.
 
 Same key map as the other keyboard scripts: W/S forward, A/D yaw, arrow keys
 move the FR target horizontally, Q/E raise/lower it, R clears the target.
@@ -21,7 +21,7 @@ PHASE_NAMES = ('QUAD', 'PREPARE', 'REACH', 'HOLD', 'LOWER', 'RECOVER')
 
 
 def workspace_controller():
-  from src.tasks.leg_manip.mdp.foot_workspace import build_foot_workspace
+  from src.tasks.moe_leg_manip.mdp.foot_workspace import build_foot_workspace
   workspace = build_foot_workspace()
   offsets = workspace.offsets
   return KeyboardController(
@@ -145,8 +145,9 @@ def main():
   from mjlab.envs import ManagerBasedRlEnv
   from mjlab.rl import RslRlVecEnvWrapper
   from mjlab.utils.torch import configure_torch_backends
-  from src.tasks.leg_manip.env_cfg import leg_manip_env_cfg
-  from src.tasks.leg_manip.rl import LegManipOnPolicyRunner, leg_manip_ppo_runner_cfg
+  from src.tasks.moe_leg_manip.env_cfg import leg_manip_env_cfg
+  from src.tasks.moe_leg_manip.rl import LegManipOnPolicyRunner, leg_manip_ppo_runner_cfg
+  from src.tasks.moe_leg_manip.rl.moe import checkpoint_uses_moe, moe_leg_manip_ppo_runner_cfg
 
   keyboard = env = None
   try:
@@ -162,7 +163,10 @@ def main():
     env = ManagerBasedRlEnv(cfg, device=args.device)
     wrapped = RslRlVecEnvWrapper(env, clip_actions=10.)
     bridge = KeyboardCommandBridge(env.command_manager.get_term('twist'), env.num_envs)
-    runner = LegManipOnPolicyRunner(wrapped, asdict(leg_manip_ppo_runner_cfg()), device=args.device)
+    saved = torch.load(checkpoint, map_location='cpu', weights_only=False)
+    agent_cfg = moe_leg_manip_ppo_runner_cfg() if checkpoint_uses_moe(saved) else leg_manip_ppo_runner_cfg()
+    del saved
+    runner = LegManipOnPolicyRunner(wrapped, asdict(agent_cfg), device=args.device)
     runner.load(str(checkpoint), load_cfg={'actor': True}, strict=True, map_location=args.device)
     policy = runner.get_inference_policy(device=args.device)
     if args.smoke:

@@ -6,14 +6,14 @@ local `/home/e980/projects/moe-rsl-rl/moe_rsl_rl/modules` at commit
 license is included in `LICENSE`. Only the neural networks are used: installing
 the full package would require RSL-RL 5.4.2, while this training stack uses 5.0.1.
 
-`leg_manip_moe` uses four independent `[512,256,128]` actor experts, an `[128]`
+`moe_leg_manip` uses four independent `[512,256,128]` actor experts, an `[128]`
 gate, `use_explicit_expert=False`, and `top_k=-1` (dense). All experts contribute
 to a weighted action mean; their roles are learned rather than assigned to
 stances. The critic, 51D actor observations, per-joint StanceGaussianDistribution,
 symmetry loss, PPO settings, exploration, curriculum and rewards are unchanged.
 No auxiliary gate/balance loss or Gaussian mixture is enabled.
 
-Train from scratch with `python scripts/train.py leg_manip_moe --agent.resume False`.
+Train from scratch with `python scripts/train.py moe_leg_manip --agent.resume False`.
 The keyboard script detects expert parameter keys automatically, and the
 original `leg_manip` task remains an MLP for legacy checkpoints.
 

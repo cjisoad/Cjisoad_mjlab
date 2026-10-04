@@ -9,7 +9,7 @@ from .vendor.ac_moe_gated import GatedMoENet
 
 @dataclass
 class DenseMoEActorCfg(RslRlModelCfg):
-  class_name: str = 'src.tasks.leg_manip.rl.moe:DenseMoEActor'
+  class_name: str = 'src.tasks.moe_leg_manip.rl.moe:DenseMoEActor'
   num_experts: int = 4
   gate_hidden_dims: tuple[int, ...] = (128,)
   top_k: int = -1
@@ -48,12 +48,12 @@ class DenseMoEActor(MLPModel):
     return self._export(lambda: super(DenseMoEActor, self).as_onnx(verbose))
 
 
-def leg_manip_moe_ppo_runner_cfg():
+def moe_leg_manip_ppo_runner_cfg():
   from . import leg_manip_ppo_runner_cfg
   cfg = leg_manip_ppo_runner_cfg()
   cfg.actor = DenseMoEActorCfg(**{**asdict(cfg.actor),
     'class_name': DenseMoEActorCfg.class_name})
-  cfg.experiment_name = 'leg_manip_moe'
+  cfg.experiment_name = 'moe_leg_manip'
   return cfg
 
 
