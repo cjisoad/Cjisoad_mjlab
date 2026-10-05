@@ -1,5 +1,18 @@
 # Teacher body-Y anchor and reward audit
 
+## Update on 2026-10-06
+
+The approved follow-up removes `ang_xz` only from `pedipulation_t`, in both
+training and play. The teacher now has 25 rewards; the original pedipulation
+task retains 26 and the locomotion teacher retains 19. Existing gravity-based
+`handstand_orientation` (-1.) and `orientation_symmetry` (-.5) remain.
+All other reward functions, weights, parameters and relative order are retained.
+The audit script now compares the remaining 44 teacher rewards and explicitly
+records the removed source reward. The 45-reward/GPU evidence below describes
+the earlier `f05df8d` anchor change, before this removal.
+
+The follow-up does not modify either running quadruped training snapshot.
+
 ## Approved change
 
 Both `pedipulation_t` and `loco_pedipulation_t` use

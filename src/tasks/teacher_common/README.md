@@ -94,8 +94,14 @@ common nominal biped offset (approximately [.13349, .03060, .47804]). This
 expresses biped stance to a future unified student while keeping source FR
 default-pose rewards active. `has_foot_target` is false for this nominal target
 and the zero sentinel. Actual operation targets enable source FR tracking.
-Source rewards execute unchanged through a read-only `stand` -> `twist` view;
-their weights, parameters, ordering and batch-wide height gate are preserved.
+Source rewards execute through a read-only `stand` -> `twist` view.
+As of 2026-10-06, the standing teacher removes the `ang_xz` Euler-roll penalty
+because it is singular at full rear-leg stand and duplicates the existing
+gravity-based posture constraints. Its training and play configs now have
+25 rewards. `handstand_orientation` (-1.) and `orientation_symmetry` (-.5)
+are retained. All remaining weights, parameters, relative ordering and the
+batch-wide height gate are preserved. The original pedipulation task retains
+its 26-reward configuration for comparison; locomotion still has 19 rewards.
 Unchanged formulas do not imply unchanged values: horizontal velocity tracking
 and FR tracking now use the new basis. Standing automatic heading feedback
 also generates wz from the new heading. At a fixed physical state and fixed
@@ -122,7 +128,7 @@ random control delay and stochastic Gaussian exploration. Standing source
 pushes set xy velocity within +/-.4 m/s and angular velocity within +/-.6 rad/s
 every8s. Locomotion source pushes occur every5-6s; the source configuration
 sets xy within +/-.15 m/s and yaw within +/-.2 rad/s (the resulting velocity
-dictionary contains only those three axes). The original rewards are not retuned.
+dictionary contains only those three axes). The remaining rewards are not retuned.
 `play=True` removes runtime pushes and policy sensor noise, but retains physical
 DR, random action delay and source reset randomness. It is **not** a fully
 nominal-physics evaluation. A nominal evaluation must explicitly control these

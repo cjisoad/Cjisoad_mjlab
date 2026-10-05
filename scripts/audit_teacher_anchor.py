@@ -29,8 +29,8 @@ from src.tasks.teacher_common.rewards import source_reward_function
 
 
 def reward_values(env):
-  # The source biped's base_height mutates one batch-wide height gate, and
-  # ang_xz is evaluated before it. Restore that history between comparisons.
+  # The source biped's base_height mutates one batch-wide height gate.
+  # Restore that history between comparisons, including legacy source terms.
   action = env.action_manager.get_term('joint_pos')
   previous_gate = action.height_score.clone()
   try:
@@ -63,6 +63,11 @@ def main():
     cfg.scene.num_envs = args.num_envs
     cfg.commands['twist'].debug_vis = False
     original = source_factory()
+    removed_source_rewards = []
+    if task == 'pedipulation_t':
+      assert 'ang_xz' not in cfg.rewards
+      original.rewards.pop('ang_xz')
+      removed_source_rewards.append('ang_xz')
     assert tuple(cfg.rewards) == tuple(original.rewards)
     for name, before in original.rewards.items():
       after = cfg.rewards[name]
@@ -81,9 +86,8 @@ def main():
       ids = torch.arange(env.num_envs, device=env.device)
       groups = ids % 4
       rolls = torch.tensor((0., .3, .3, .25), device=env.device)[groups]
-      # Exact pitch -pi/2 is an Euler-chart singularity for the unchanged
-      # ang_xz source reward. Exercise that separately above; use near-upright
-      # states here so this comparison isolates the anchor change.
+      # Keep the same near-upright comparison poses as the original anchor
+      # audit. The legacy ang_xz reward is now excluded from the teacher.
       pitches = torch.tensor((0., 0., -.5, -torch.pi/2.+.01), device=env.device)[groups]
       yaws = torch.full((env.num_envs,), .6, device=env.device)
       state = robot.data.default_root_state.clone()
@@ -168,7 +172,8 @@ def main():
                           'old_wz_pure_quad_roll': old_wz[groups == 1].mean().item()}
       record = {'task': task, 'device': args.device, 'num_envs': env.num_envs,
         'pose_groups': ['level', 'quad_roll', 'intermediate_roll', 'near_upright_roll'],
-        'reward_count': len(effects), 'weights_parameters_order_preserved': True,
+        'reward_count': len(effects), 'removed_source_rewards': removed_source_rewards,
+        'remaining_weights_parameters_order_preserved': True,
         'state_and_command_fixed_for_reward_comparison': True,
         'allowed_direct_changes': sorted(allowed), 'unexpected_changed_rewards': unexpected,
         'zero_command_linear_reward_invariant': True,

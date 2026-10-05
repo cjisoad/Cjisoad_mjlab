@@ -32,9 +32,13 @@ class TeacherConfigurationTests(unittest.TestCase):
   def test_both_teacher_tasks_are_registered(self):
     self.assertTrue(set(TASKS).issubset(list_tasks()), 'Both aligned teachers must be registered')
 
-  def test_rewards_preserve_source_functions_order_weights_and_parameters(self):
+  def test_rewards_preserve_remaining_source_functions_order_weights_and_parameters(self):
     for task, factory in zip(TASKS, (pedipulation_env_cfg, loco_pedipulation_env_cfg)):
       cfg, original = load_env_cfg(task), factory()
+      if task == 'pedipulation_t':
+        self.assertIn('ang_xz', original.rewards)
+        self.assertNotIn('ang_xz', cfg.rewards)
+        original.rewards.pop('ang_xz')
       self.assertEqual(tuple(cfg.rewards), tuple(original.rewards))
       for name, old in original.rewards.items():
         new = cfg.rewards[name]
@@ -47,6 +51,16 @@ class TeacherConfigurationTests(unittest.TestCase):
         else:
           self.assertIs(new.func, old.func)
         self.assertEqual(params, old.params)
+
+  def test_biped_training_and_play_remove_only_euler_roll_penalty(self):
+    source = pedipulation_env_cfg()
+    expected = tuple(name for name in source.rewards if name != 'ang_xz')
+    for play in (False, True):
+      cfg = load_env_cfg('pedipulation_t', play=play)
+      self.assertEqual(tuple(cfg.rewards), expected)
+      self.assertEqual(len(cfg.rewards), 25)
+      self.assertEqual(cfg.rewards['handstand_orientation'].weight, -1.)
+      self.assertEqual(cfg.rewards['orientation_symmetry'].weight, -.5)
 
   def test_action_physics_and_network_contract_match_teacher_settings(self):
     from src.tasks.leg_manip.env_cfg import leg_manip_env_cfg

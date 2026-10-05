@@ -16,6 +16,9 @@ from .anchor_frame import anchor_degenerate_fraction
 
 def pedipulation_teacher_env_cfg(play=False):
   cfg = pedipulation_env_cfg(play=play)
+  # Euler roll is singular at the upright stand; gravity-based orientation
+  # and symmetry rewards already constrain the desired posture.
+  cfg.rewards.pop('ang_xz')
   source_command = cfg.commands['stand']
   cfg.commands = {'twist': PedipulationTeacherCommandCfg(**asdict(source_command))}
   cfg.metrics['anchor_degenerate_fraction'] = MetricsTermCfg(func=anchor_degenerate_fraction)
