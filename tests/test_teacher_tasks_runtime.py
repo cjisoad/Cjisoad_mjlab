@@ -39,7 +39,9 @@ class TeacherRuntimeTests(unittest.TestCase):
           term = env.command_manager.get_term('twist')
           action = env.action_manager.get_term('joint_pos')
           assert tuple(action._entity.joint_names[i] for i in action.joint_ids.tolist()) == JOINT_NAMES
-          torch.testing.assert_close(action.default_angles, torch.tensor(DEFAULT_ANGLES, device=env.device).expand(64, 12))
+          expected_angles = (DEFAULT_ANGLES if task == 'pedipulation_t' else
+            (-.1, .9, -1.8, .1, .9, -1.8, -.1, .9, -1.8, .1, .9, -1.8))
+          torch.testing.assert_close(action.default_angles, torch.tensor(expected_angles, device=env.device).expand(64, 12))
           arm = env.sim.model.dof_armature[:, env.scene['robot'].indexing.joint_v_adr]
           assert bool((arm > 0).all()), 'Rotational armature must remain nonzero'
           losses_per_update = []

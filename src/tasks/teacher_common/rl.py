@@ -12,6 +12,7 @@ from src.tasks.leg_manip.mdp.foot_workspace import build_foot_workspace
 from src.tasks.loco_pedipulation.rl import loco_pedipulation_ppo_runner_cfg
 from src.tasks.loco_pedipulation.rl.metrics import ManipulationLogger
 from .commands import PedipulationTeacherCommand, LocoPedipulationTeacherCommand
+from .anchor_frame import ANCHOR_CONTRACT
 
 
 def teacher_symmetry_loss(actor, observations):
@@ -85,8 +86,8 @@ class TeacherOnPolicyRunner(MjlabOnPolicyRunner):
   def _contract(self):
     from src.tasks.leg_manip.constants import BIPED_LOW, TRIPOD_HIGH, BASE_VELOCITY_SCALE
     action = self.env.unwrapped.action_manager.get_term('joint_pos')
-    return {'version': 1, 'task': self.teacher_task, 'actor_dim': 51,
-      'critic_dim': self.alg.critic.obs_dim, 'anchor': 'leg_manip_body_x_minus_z',
+    return {'version': 2, 'task': self.teacher_task, 'actor_dim': 51,
+      'critic_dim': self.alg.critic.obs_dim, 'anchor': ANCHOR_CONTRACT,
       'command': 'vx_vy_wz_FR_offset_from_quadruped_zero',
       'foot_zero': self.teacher_term.zero.cpu().tolist(),
       'overlap_dz': [BIPED_LOW, TRIPOD_HIGH],

@@ -1,4 +1,5 @@
 """Physical command and training contracts for the aligned teacher pair."""
+from copy import deepcopy
 from dataclasses import asdict
 import unittest
 import torch
@@ -47,13 +48,18 @@ class TeacherConfigurationTests(unittest.TestCase):
           self.assertIs(new.func, old.func)
         self.assertEqual(params, old.params)
 
-  def test_action_physics_and_network_contract_match_leg_manip(self):
+  def test_action_physics_and_network_contract_match_teacher_settings(self):
     from src.tasks.leg_manip.env_cfg import leg_manip_env_cfg
     common = leg_manip_env_cfg()
     for task in TASKS:
       cfg, rl = load_env_cfg(task), load_rl_cfg(task)
       self.assertEqual(asdict(cfg.actions['joint_pos']), asdict(common.actions['joint_pos']))
-      self.assertEqual(cfg.scene.entities['robot'], common.scene.entities['robot'])
+      expected_robot = deepcopy(common.scene.entities['robot'])
+      if task == 'loco_pedipulation_t':
+        expected_robot.init_state.joint_pos = loco_pedipulation_env_cfg().scene.entities['robot'].init_state.joint_pos
+        for actuator in expected_robot.articulation.actuators:
+          actuator.armature = .02 if 'calf' in actuator.target_names_expr[0] else .01
+      self.assertEqual(cfg.scene.entities['robot'], expected_robot)
       self.assertIs(cfg.events['physics'].func, common.events['physics'].func)
       self.assertEqual(rl.actor.hidden_dims, (512, 256, 128))
       self.assertFalse(rl.actor.obs_normalization)

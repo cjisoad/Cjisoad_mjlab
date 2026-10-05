@@ -1,9 +1,9 @@
-"""Source command behavior expressed in the common leg_manip frame/zero."""
+"""Source command behavior expressed in the common teacher frame/foot zero."""
 from dataclasses import dataclass
 
 import torch
 
-from src.tasks.leg_manip.mdp.anchor_frame import anchor_basis, to_anchor
+from .anchor_frame import anchor_basis, to_anchor
 from src.tasks.leg_manip.mdp.foot_workspace import build_foot_workspace, LOW, HIGH
 from src.tasks.pedipulation.mdp.commands import PedipulationCommand, PedipulationCommandCfg
 from src.tasks.loco_pedipulation.mdp.commands import LocoPedipulationCommand, LocoPedipulationCommandCfg
@@ -58,7 +58,7 @@ class CommonAnchorFrame:
     return to_anchor(self.basis_w, values)
 
   def reset(self, env_ids):
-    pass  # The common leg_manip anchor has no history.
+    pass  # The common teacher anchor has no history.
 
   def update(self, quat, dt, step):
     pass  # Orientation is read directly from the matched simulator state.

@@ -17,7 +17,9 @@ def restitution_damping_ratio(restitution):
 @requires_model_fields('body_mass', 'body_inertia', 'body_ipos', 'geom_friction',
   'geom_solref', 'dof_armature', 'dof_frictionloss', 'dof_damping',
   recompute=RecomputeLevel.set_const)
-def randomize_physics(env, env_ids):
+def randomize_physics(env, env_ids, com_range=(-.05, .05),
+                      armature_range=(.003, .08)):
+  """Randomize source physics; None keeps the configured joint armatures."""
   robot = env.scene['robot']
   state = env.action_manager.get_term('joint_pos')
   model = env.sim.model
@@ -29,13 +31,17 @@ def randomize_physics(env, env_ids):
   friction = sample(.2, 1.2)
   restitution = sample(0., .3)
   added_mass = sample(-1., 2.)
-  com_offset = sample(-.05, .05, 3)
+  com_offset = sample(*com_range, width=3)
   state.kp_multipliers.copy_(sample(.9, 1.1, 12))
   state.kd_multipliers.copy_(sample(.9, 1.1, 12))
   state.motor_offsets.copy_(sample(-.035, .035, 12))
   joint_friction = sample(.01, .1)
   joint_damping = sample(0., .1)
-  armature = sample(.003, .08)
+  if armature_range is None:
+    nominal_armature = env.sim.get_default_field('dof_armature')[robot.indexing.joint_v_adr]
+    armature = nominal_armature[None].expand(n, -1)
+  else:
+    armature = sample(*armature_range)
 
   body_ids = robot.indexing.body_ids
   base_local = robot.find_bodies('base_link')[0][0]
@@ -63,8 +69,11 @@ def randomize_physics(env, env_ids):
     actuator.set_gains(slice(None), 40. * state.kp_multipliers[:, ordered], state.kd_multipliers[:, ordered])
 
   # Keep the source ABI: its friction slot is zero, and restitution is repeated.
+  # The source DR ABI has one armature slot. With fixed per-joint values,
+  # record their mean; the locomotion teacher does not consume this DR vector.
+  armature_observation = armature.mean(dim=-1, keepdim=True)
   state.dr_observation.copy_(torch.cat((torch.zeros_like(friction), added_mass,
-    com_offset, state.kp_multipliers, state.kd_multipliers, armature,
+    com_offset, state.kp_multipliers, state.kd_multipliers, armature_observation,
     joint_friction, joint_damping, restitution, restitution), dim=-1))
 
 
