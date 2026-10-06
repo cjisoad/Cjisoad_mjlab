@@ -72,7 +72,8 @@ class PedipulationPositionAction(ActionTerm):
 
   def reset(self, env_ids=None):
     ids = slice(None) if env_ids is None else env_ids
-    # Source retains the terminal action in the next observation and delay buffer.
+    # Start the new episode with zero action history in observations and delay.
+    self._raw_action[ids] = 0.
     self.previous_action[ids] = 0.
     self.previous_joint_vel[ids] = 0.
     self.delay_steps[ids] = 0
