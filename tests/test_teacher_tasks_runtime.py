@@ -50,7 +50,8 @@ class TeacherRuntimeTests(unittest.TestCase):
             with torch.inference_mode():
               for step in range(agent.num_steps_per_env):
                 obs = wrapped.get_observations()
-                assert obs['actor'].shape == (64, 51) and obs['critic'].shape == (64, critic_dim)
+                actor_dim = 54 if task == 'loco_pedipulation_t' else 51
+                assert obs['actor'].shape == (64, actor_dim) and obs['critic'].shape == (64, critic_dim)
                 prefix = slice(3, 51) if task == 'pedipulation_t' else slice(0, 48)
                 torch.testing.assert_close(obs['critic'][:, prefix], obs['actor'][:, :48])
                 assert float((obs['actor'][:,48:51]-base_velocity(env)).abs().max()) <= .04001
@@ -114,7 +115,8 @@ class TeacherRuntimeTests(unittest.TestCase):
             pass
           else:
             raise AssertionError('Incompatible teacher checkpoint must be rejected')
-          record = {'task':task, 'num_envs':64, 'actor_dim':51, 'critic_dim':critic_dim,
+          record = {'task':task, 'num_envs':64, 'actor_dim':54 if task == 'loco_pedipulation_t' else 51,
+            'critic_dim':critic_dim,
             'updates':2, 'epochs':agent.algorithm.num_learning_epochs, 'minibatches':agent.algorithm.num_mini_batches,
             'actor_updated':True, 'checkpoint_roundtrip':True, 'incompatible_checkpoint_rejected':True,
             'experiment_rename_safe':True, 'actual_action_contract_validated':True,

@@ -6,14 +6,20 @@ These tasks prepare independently trained PPO teachers; this change does not
 implement student training, online DAgger collection, or a descent teacher.
 The original task packages and leg_manip/MoE implementations are unchanged.
 
-Both actors are MLPs (512/256/128, ELU) with the same **51D observation layout
-and 12D action order** as the MLP leg_manip. The teacher anchor now differs
+Both actors are MLPs (512/256/128, ELU) with the same **12D action order** as
+the MLP leg_manip. `pedipulation_t` retains a 51D actor; `loco_pedipulation_t`
+uses a 54D actor. The locomotion actor extends the common 51D prefix with
+gait-phase sin/cos and the quadruped-to-tripod blend. The teacher anchor now differs
 from the current student's anchor; layout equality is not frame equality.
 In order: body angular velocity (3),
 projected gravity (3), velocity/FR command (6), joint positions relative to the
 task defaults (12), joint velocities (12), previous executed raw action (12),
 and absolute base-origin linear velocity in the common anchor (3, scaled by 2).
-The last block is not velocity tracking error and is not gated by stance.
+For the locomotion actor, the final three channels are moving-gated gait-phase
+sin/cos and the continuous tripod blend. Phase channels are noise-free; the
+blend remains visible while standing so the actor can identify tripod support.
+The velocity block is absolute base-origin velocity, not velocity tracking
+error, and is not gated by stance.
 Actions use canonical FL/FR/RL/RR hip/thigh/calf order, scale .25, and wrapper
 clipping at 10. Both use the standing physical model. The standing teacher uses
 the original standing defaults and startup physical randomization.
@@ -47,7 +53,9 @@ Critics retain the respective source layouts: standing 89D (exact scaled
 velocity3 + shared actor first48 + source DR34 + contacts4); locomotion 95D
 (shared48 + exact unscaled velocity3 + gait2 + FR-state18 + feet24). They share
 the exact actor noise draw for the first48, with separate clean velocities.
-No additional privileged actor channels have been selected or enabled.
+The locomotion critic and reward remain unchanged; only its actor receives the
+phase/blend channels. Existing 51D locomotion teacher checkpoints are
+incompatible with the new 54D actor and must be retrained.
 
 ## Command geometry and the ten-centimeter overlap
 
@@ -176,9 +184,9 @@ For **pedipulation_t**:
 
 For **loco_pedipulation_t**:
 
-1. Actor51 baseline; add physical DR to the existing contact/phase/FR critic.
-2. Recommended stronger teacher actor: append gait sin/cos, FR phase/reference
-   state and feet contacts. Particularly useful for swing timing, three-foot
+1. Actor54 baseline; add physical DR to the existing contact/phase/FR critic.
+2. Recommended stronger teacher actor: append FR phase/reference state and
+   feet contacts. Particularly useful for swing timing, three-foot
    support and landing, but future student needs history to infer hidden state.
 3. Full-state actor: option2 plus foot velocities/heights/air times/forces,
    base height and actual dynamics/actuator parameters. Largest observability

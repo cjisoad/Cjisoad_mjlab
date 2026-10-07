@@ -136,9 +136,17 @@ class TeacherCommandTests(unittest.TestCase):
       term.set_command(torch.arange(env.num_envs), velocity=(.2, .01, -.1), target_offset=(.04, .01, .30))
       env.scene['robot'].data.root_link_lin_vel_w[:] = torch.tensor((.2, -.1, .03))
       callback = load_env_cfg(task).observations['actor'].terms['policy'].func
-      torch.testing.assert_close(callback(env, add_noise=False), leg_obs.policy_state(env, add_noise=False))
+      clean = callback(env, add_noise=False)
+      source = leg_obs.policy_state(env, add_noise=False)
+      actor_dim = 54 if task == 'loco_pedipulation_t' else 51
+      self.assertEqual(clean.shape, (256, actor_dim))
+      torch.testing.assert_close(clean[:, :51], source)
+      if task == 'loco_pedipulation_t':
+        from src.tasks.loco_pedipulation.mdp.observations import gait_phase
+        torch.testing.assert_close(clean[:, 51:53], gait_phase(env))
+        torch.testing.assert_close(clean[:, 53:54], term.blend[:, None])
       noisy = callback(env, add_noise=True)
-      self.assertEqual(noisy.shape, (256, 51))
+      self.assertEqual(noisy.shape, (256, actor_dim))
       self.assertLessEqual(float((noisy[:, 48:51]-leg_obs.base_velocity(env)).abs().max()), .040001)
       torch.testing.assert_close(leg_obs.shared_policy_state(env), noisy[:, :48])
 

@@ -10,6 +10,7 @@ from src.tasks.leg_manip.mdp import observations
 from src.tasks.pedipulation.env_cfg import pedipulation_env_cfg
 from src.tasks.loco_pedipulation.env_cfg import loco_pedipulation_env_cfg
 from .commands import PedipulationTeacherCommandCfg, LocoPedipulationTeacherCommandCfg
+from . import observations as teacher_observations
 from .rewards import pedipulation_reward
 from .anchor_frame import anchor_degenerate_fraction
 
@@ -60,7 +61,7 @@ def loco_pedipulation_teacher_env_cfg(play=False):
   if source_push is not None:
     cfg.events['push_robot'] = source_push
   cfg.observations['actor'].terms['policy'] = ObservationTermCfg(
-    func=observations.policy_state, params={'add_noise': not play})
+    func=teacher_observations.loco_policy_state, params={'add_noise': not play})
   cfg.observations['critic'].terms['policy'].func = observations.shared_policy_state
   # Source loco critic uses unscaled exact velocity; keep its original layout.
   return cfg

@@ -86,7 +86,7 @@ class TeacherOnPolicyRunner(MjlabOnPolicyRunner):
   def _contract(self):
     from src.tasks.leg_manip.constants import BIPED_LOW, TRIPOD_HIGH, BASE_VELOCITY_SCALE
     action = self.env.unwrapped.action_manager.get_term('joint_pos')
-    return {'version': 2, 'task': self.teacher_task, 'actor_dim': 51,
+    return {'version': 2, 'task': self.teacher_task, 'actor_dim': self.alg.actor.obs_dim,
       'critic_dim': self.alg.critic.obs_dim, 'anchor': ANCHOR_CONTRACT,
       'command': 'vx_vy_wz_FR_offset_from_quadruped_zero',
       'foot_zero': self.teacher_term.zero.cpu().tolist(),
