@@ -9,7 +9,7 @@ class BridgeRegistrationTests(unittest.TestCase):
     play = load_env_cfg('pedipulation_bridge_t', play=True)
     self.assertEqual(cfg.commands['twist'].verify_seconds, 2.5)
     self.assertEqual(cfg.actions['joint_pos'].scale, .25)
-    self.assertEqual(cfg.actions['joint_pos'].delay, True)
+    self.assertEqual(cfg.actions['joint_pos'].delay, False)
     self.assertEqual(cfg.commands['twist'].start_height_range, play.commands['twist'].start_height_range)
     self.assertEqual(load_runner_cls('pedipulation_bridge_t').__name__, 'BridgeOnPolicyRunner')
     self.assertEqual(load_rl_cfg('pedipulation_bridge_t').experiment_name, 'pedipulation_bridge_t')

@@ -21,7 +21,7 @@ class RiseGuidanceTests(unittest.TestCase):
     self.assertNotIn('linear_velocity', cfg.rewards)
     self.assertNotIn('angular_velocity', cfg.rewards)
     self.assertNotIn('rear_hip', cfg.rewards)
-    for name in ('height','orientation','support_pose','fl_position','rise_progress'):
+    for name in ('height','orientation','support_pose','fl_height'):
       self.assertIn(name,cfg.rewards)
 
   def test_boundary_accepts_recoverable_fr_and_support_deviations(self):
@@ -100,17 +100,16 @@ class RiseGuidanceTests(unittest.TestCase):
     actor_fn=cfg.observations['actor'].terms['policy'].func
     critic_fn=cfg.observations['critic'].terms['policy'].func
     first=actor_fn(env,add_noise=False)
-    self.assertEqual(first.shape,(4,73))
+    self.assertEqual(first.shape,(4,84))
     shared=critic_fn(env)
-    self.assertEqual(shared.shape,(4,70))
-    torch.testing.assert_close(shared[:,:48],first[:,:48])
-    torch.testing.assert_close(shared[:,48:],first[:,51:])
+    self.assertEqual(shared.shape,(4,84))
+    torch.testing.assert_close(shared,first)
     term.bridge_elapsed[:]=1.5
     second=actor_fn(env,add_noise=False)
     torch.testing.assert_close(first[:,:51],second[:,:51])
     self.assertFalse(torch.equal(first[:,51:],second[:,51:]))
 
-  def test_fr_tracking_is_more_tolerant_during_rise(self):
+  def test_fr_tracking_remains_tolerant_at_endpoint(self):
     env,term,_=fixture()
     self.start(env,term); term.action_owner[:]=BRIDGE
     term.bridge_elapsed[:]=.5; term._update_command(); set_matching_feet(env,term)
@@ -119,7 +118,7 @@ class RiseGuidanceTests(unittest.TestCase):
     term.bridge_elapsed[:]=10.; term._update_command(); set_matching_feet(env,term)
     env.scene['robot'].data.site_pos_w[:,1,0]+=.08
     late=rewards.shaping(env,'fr_tracking')
-    self.assertTrue((early>late*2.).all())
+    torch.testing.assert_close(early,late)
 
   def test_handoff_rejects_excessive_actual_linear_momentum(self):
     env,term,_=fixture()
@@ -160,6 +159,7 @@ class RiseGuidanceTests(unittest.TestCase):
     ref=term.reference_state; data=env.scene['robot'].data
     data.root_link_pos_w[:,2]=ref['height']
     data.projected_gravity_b.copy_(ref['gravity'])
+    data.root_link_quat_w.copy_(ref['quaternion'])
     data.joint_pos.copy_(ref['joint_pos'])
     for name in ('height','orientation','support_pose'):
       torch.testing.assert_close(rewards.shaping(env,name),torch.ones(4))
@@ -168,7 +168,7 @@ class RiseGuidanceTests(unittest.TestCase):
     data.joint_pos[:,6]+=.5
     self.assertTrue((rewards.shaping(env,'support_pose')<1.).all())
 
-  def test_progress_reward_requires_actual_improvement_and_is_once_per_step(self):
+  def test_coupled_progress_reward_is_removed(self):
     env,term,_=fixture()
     self.start(env,term)
     term.begin_step()
@@ -176,12 +176,8 @@ class RiseGuidanceTests(unittest.TestCase):
     data.root_link_pos_w[:,2]=.5
     data.projected_gravity_b[:]=torch.tensor((-1.,0.,0.))
     env.common_step_counter+=1; term.advance()
-    self.assertTrue((rewards.shaping(env,'rise_progress')>0.).all())
-    previous=term.rise_progress_delta.clone()
-    term.advance()
-    torch.testing.assert_close(term.rise_progress_delta,previous)
-    tick(env,term)
-    torch.testing.assert_close(rewards.shaping(env,'rise_progress'),torch.zeros(4))
+    self.assertNotIn('rise_progress',bridge_env_cfg().rewards)
+    with self.assertRaises(ValueError): rewards.shaping(env,'rise_progress')
 
   def test_nonfinite_actual_velocity_fails_before_boundary_handoff(self):
     env,term,_=fixture()

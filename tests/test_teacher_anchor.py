@@ -130,7 +130,7 @@ class TeacherAnchorConsumerTests(unittest.TestCase):
     action.joint_ids = torch.arange(12)
     wrapped = SimpleNamespace(unwrapped=env, clip_actions=10.)
     stub = SimpleNamespace(env=wrapped, teacher_term=term, teacher_task='loco_pedipulation_t',
-                           alg=SimpleNamespace(critic=SimpleNamespace(obs_dim=95)))
+                           alg=SimpleNamespace(actor=SimpleNamespace(obs_dim=51),critic=SimpleNamespace(obs_dim=95)))
     contract = TeacherOnPolicyRunner._contract(stub)
     self.assertEqual(contract['version'], 2)
     self.assertEqual(contract['anchor'], 'teacher_body_y_cross_up_v1')

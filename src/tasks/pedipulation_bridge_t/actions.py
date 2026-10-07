@@ -54,3 +54,7 @@ class BridgePositionAction(PedipulationPositionAction):
     # Source action applies only its original ±100 safety limit. Translated
     # expert actions may exceed10; clipping them here changes q_des.
     super().process_actions(selected)
+    self.delay_steps[~term.disturbed]=0
+    if term.course_stage>=2:
+      maximum=round((self._env.cfg.decimation-1)*term.course.randomization_fraction)
+      self.delay_steps.clamp_max_(maximum)

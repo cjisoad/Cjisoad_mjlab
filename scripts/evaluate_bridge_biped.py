@@ -125,7 +125,7 @@ def state_snapshot(env,term):
 
 
 def initialize_static_baseline(env):
-  """Evaluation-only endpoint initialization, preserving startup DR and q_des."""
+  """Evaluation-only endpoint initialization, preserving current physics and q_des."""
   from src.tasks.pedipulation_bridge_t.commands import VERIFY
   from src.tasks.pedipulation_bridge_t.experts import JOINT_NAMES
   from src.tasks.pedipulation_transition_t.motion import make_model
@@ -159,6 +159,7 @@ def initialize_static_baseline(env):
   term.moving.copy_(moving)
   term.requested_velocity.zero_()
   term.owner[:]=VERIFY; term.action_owner[:]=VERIFY
+  term.live_start[:]=True; term.start_time.zero_(); term.yaw.zero_()
   term.bridge_elapsed[:]=term.cfg.bridge_rise_seconds/term.reference_speed
   term.verify_elapsed.zero_(); term.tail_steps.zero_(); term.attempt_elapsed.zero_()
   term.invalid_elapsed.zero_(); term.candidate_elapsed.zero_()
@@ -246,16 +247,16 @@ def main():
     record=dict(kind='frozen_biped_static_endpoint_initialization_baseline',
       trained_handoff_evaluation=False,training_performed=False,evaluation_only_state_initialization=True,
       initialization='final audited qpos witness; zero physical velocities; action history preserves q_des including motor offsets',
-      physical_configuration='unchanged bridge/common quadruped teacher model and startup DR',
-      startup_physics_and_motor_offsets_preserved=True,frozen_experts_unchanged=True,
+      physical_configuration='common quadruped teacher model; nominal course0 physics',
+      physics_and_motor_offsets_preserved=True,frozen_experts_unchanged=True,
       device=args.device,seed=args.seed,num_envs=args.num_envs,horizon_seconds=term.cfg.verify_seconds,
-      actor_dim=73,critic_dim=117,checkpoint=str(checkpoint.resolve()),
+      bridge_actor_dim=84,bridge_critic_dim=172,frozen_actor_dim=51,checkpoint=str(checkpoint.resolve()),
       checkpoint_sha256=hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
       path_asset=str(PATH_ASSET.resolve()),path_sha256=hashlib.sha256(PATH_ASSET.read_bytes()).hexdigest(),
       survival_definition='reached validation horizon without physical failure; early state-gate rejection is censored',
       sampling='standing validation across cyclic path endpoints; zero initial velocity; first outcome only',
       verification_velocity=list(term.cfg.verification_velocity),
-      static_audit_note='Nominal static witnesses are evaluated under sampled startup DR; static reachability alone does not prove dynamic teacher stability.',
+      static_audit_note='Static witnesses use nominal course0 physics; static reachability alone does not prove dynamic teacher stability.',
       **summarize_records(rows),worlds=rows)
     args.output.parent.mkdir(parents=True,exist_ok=True)
     args.output.write_text(json.dumps(record,indent=2,allow_nan=False)+'\n')

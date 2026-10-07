@@ -16,22 +16,23 @@ class BridgePPOTests(unittest.TestCase):
     source=torch.nn.Sequential(torch.nn.Linear(51,512),torch.nn.ELU(),
       torch.nn.Linear(512,256),torch.nn.ELU(),torch.nn.Linear(256,128),
       torch.nn.ELU(),torch.nn.Linear(128,12))
-    guided=torch.nn.Sequential(torch.nn.Linear(73,512),torch.nn.ELU(),
+    guided=torch.nn.Sequential(torch.nn.Linear(84,512),torch.nn.ELU(),
       torch.nn.Linear(512,256),torch.nn.ELU(),torch.nn.Linear(256,128),
       torch.nn.ELU(),torch.nn.Linear(128,12))
     rl.initialize_guided_actor(guided,source)
     original=torch.randn(4,51)
-    torch.testing.assert_close(guided(torch.cat((original,torch.randn(4,22)),-1)),
+    torch.testing.assert_close(guided(torch.cat((original,torch.randn(4,33)),-1)),
       source(original),rtol=1e-5,atol=1e-6)
     self.assertFalse(guided[0].weight[:,51:].any())
 
-  def test_settings_and_networks_match_tripod_teacher(self):
+  def test_settings_use_old_tracking_recipe(self):
     old = asdict(teacher_ppo_runner_cfg('loco_pedipulation_t'))
     new = asdict(bridge_ppo_runner_cfg())
-    self.assertEqual(old['actor'], new['actor'])
     self.assertEqual(old['critic'], new['critic'])
-    for key, value in old['algorithm'].items():
-      if key != 'class_name': self.assertEqual(new['algorithm'][key], value)
+    self.assertEqual(new['actor']['distribution_cfg']['init_std'],.5)
+    self.assertEqual(new['algorithm']['learning_rate'],3e-4)
+    self.assertEqual(new['algorithm']['entropy_coef'],.005)
+    self.assertEqual(new['algorithm']['gamma'],.995)
     self.assertEqual(new['num_steps_per_env'], 24)
     self.assertEqual(new['clip_actions'], 10.)
 

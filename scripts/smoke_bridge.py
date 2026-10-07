@@ -17,6 +17,8 @@ def main():
   parser.add_argument('--num-envs',type=int,default=32)
   parser.add_argument('--cycles',type=int,default=2)
   parser.add_argument('--ppo',action='store_true')
+  parser.add_argument('--stage',type=int,choices=range(3),default=0)
+  parser.add_argument('--live',action='store_true')
   parser.add_argument('--output',type=Path,default=Path('outputs/bridge_smoke'))
   args=parser.parse_args()
   if not 2<=args.num_envs<=4096 or not 1<=args.cycles<=20:
@@ -30,11 +32,16 @@ def main():
   torch.set_num_threads(1)
   args.output.mkdir(parents=True,exist_ok=True)
   cfg=bridge_env_cfg(); cfg.scene.num_envs=args.num_envs
+  cfg.commands['twist'].initial_stage=args.stage
+  cfg.commands['twist'].curriculum_enabled=False
   raw=ManagerBasedRlEnv(cfg,device=args.device)
   try:
     env=RslRlVecEnvWrapper(raw,clip_actions=10.)
     agent=bridge_ppo_runner_cfg()
     runner=BridgeOnPolicyRunner(env,asdict(agent),str(args.output) if args.ppo else None,args.device)
+    if args.live:
+      runner.term.course.stage=2; runner.term.course.level=4
+      runner.term.forced_live_probability=1.
     obs=env.get_observations()
     assert obs['actor'].shape==(args.num_envs,ACTOR_DIM)
     assert obs['critic'].shape==(args.num_envs,CRITIC_DIM)
@@ -55,7 +62,7 @@ def main():
       assert not model.training and all(not p.requires_grad and p.grad is None for p in model.parameters())
       for key,value in model.state_dict().items(): torch.testing.assert_close(value,frozen[name][key],rtol=0,atol=0)
     record.update(frozen_experts_unchanged=True,actor_dim=ACTOR_DIM,critic_dim=CRITIC_DIM,device=args.device,
-      terminal_credit='measured_validation_outcome_no_tail_discount')
+      terminal_credit='tracking_failure_once_last_student_step',course_stage=runner.term.course_stage)
     if args.ppo:
       checkpoint=args.output/'roundtrip.pt'; runner.save(str(checkpoint))
       sample=env.get_observations()

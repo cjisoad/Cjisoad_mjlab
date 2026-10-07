@@ -24,7 +24,7 @@ def initialize_guided_actor(guided, source):
     if name=='0.weight':
       expected=(value.shape[0],ACTOR_DIM)
       if value.shape[1]!=51 or target_state[name].shape!=expected:
-        raise ValueError('Guided actor first layer must extend source51 to guidance73')
+        raise ValueError(f'Guided actor first layer must extend source51 to guidance{ACTOR_DIM}')
       expanded=torch.zeros_like(target_state[name])
       expanded[:,:51]=value
       mapped[name]=expanded
@@ -38,7 +38,7 @@ def initialize_guided_actor(guided, source):
 @dataclass
 class BridgeAlgorithmCfg(RslRlPpoAlgorithmCfg):
   class_name: str = 'src.tasks.pedipulation_bridge_t.rl:BridgePPO'
-  max_bridge_steps: int = 260
+  max_bridge_steps: int = 502
 
 
 def bridge_ppo_runner_cfg():
@@ -47,13 +47,19 @@ def bridge_ppo_runner_cfg():
   params = asdict(cfg.algorithm)
   params.pop('class_name')
   cfg.algorithm = BridgeAlgorithmCfg(**params)
+  cfg.algorithm.max_bridge_steps=502
+  cfg.algorithm.learning_rate=3e-4
+  cfg.algorithm.entropy_coef=.005
+  cfg.algorithm.gamma=.995
+  cfg.algorithm.lam=.95
+  cfg.actor.distribution_cfg['init_std']=.5
   cfg.class_name = 'BridgeOnPolicyRunner'
   cfg.experiment_name = 'pedipulation_bridge_t'
   return cfg
 
 
 class BridgePPO(PPO):
-  def __init__(self, actor, critic, storage, *, max_bridge_steps=260, **kwargs):
+  def __init__(self, actor, critic, storage, *, max_bridge_steps=502, **kwargs):
     if actor.is_recurrent or critic.is_recurrent:
       raise ValueError('Complete bridge collection requires feed-forward models')
     packed = BridgeRolloutStorage('rl', storage.num_envs, max_bridge_steps,
@@ -73,16 +79,15 @@ class BridgeOnPolicyRunner(MjlabOnPolicyRunner):
     if self.is_distributed:
       raise ValueError('Variable-length complete-attempt collector currently supports one GPU')
     if (self.alg.actor.obs_dim, self.alg.critic.obs_dim) != (ACTOR_DIM, CRITIC_DIM):
-      raise ValueError('Guided bridge requires actor73/critic117; frozen teachers remain actor51')
+      raise ValueError('Tracking bridge requires actor84/critic172; frozen teachers remain actor51')
     self.term = env.unwrapped.command_manager.get_term('twist')
     self.action = env.unwrapped.action_manager.get_term('joint_pos')
     if self.alg.storage.num_transitions_per_env < int(self.term.cfg.bridge_deadline/env.unwrapped.step_dt)+2:
       raise ValueError('max_bridge_steps cannot hold a complete bridge deadline')
     self.experts = self.action._ensure_experts()
     self.action.experts = self.experts
-    # Copy only the deterministic source actor mean. The frozen source remains
-    # separate; source Gaussian exploration and fresh value initialization stay.
-    initialize_guided_actor(self.alg.actor.mlp,self.experts.actors['quadruped'].mlp)
+    # Tracking actor/critic start fresh. Frozen experts only generate entries
+    # or evaluate actual handoffs; they never initialize the student weights.
     self.updates = 0
     self.total_attempts = 0
     self.last_metrics = {}
@@ -99,6 +104,12 @@ class BridgeOnPolicyRunner(MjlabOnPolicyRunner):
     reason = torch.zeros_like(outcome)
     verified = torch.zeros_like(finished)
     moving = self.term.moving.clone().to(self.device)
+    full_start=self.term.full_start.clone().to(self.device)
+    live_start=self.term.live_start.clone().to(self.device)
+    start_kind=torch.where(live_start,3,torch.where(full_start,0,
+      torch.where(self.term.start_time.to(self.device)<self.term.guidance.rise_duration,1,2)))
+    first_stand=torch.full((self.env.num_envs,),float('nan'),device=self.device)
+    reward_phases={name:torch.zeros(self.env.num_envs,device=self.device) for name in ('preparation','rise','endpoint')}
     fr_error_squared = torch.zeros(self.env.num_envs, device=self.device)
     max_height = torch.zeros_like(fr_error_squared)
     upright_frames = torch.zeros_like(fr_error_squared)
@@ -112,17 +123,23 @@ class BridgeOnPolicyRunner(MjlabOnPolicyRunner):
       st.collection_mask.copy_((self.term.owner.to(self.device) == BRIDGE) & active)
       mask = st.collection_mask
       starting=mask & ~recorded_start
+      reference_time=self.term.start_time.to(self.device)+self.term.bridge_elapsed.to(self.device)*self.term.reference_speed.to(self.device)
+      phases={'preparation':reference_time<.5,'rise':(reference_time>=.5)&(reference_time<self.term.guidance.rise_duration),
+              'endpoint':reference_time>=self.term.guidance.rise_duration}
       data = self.env.unwrapped.scene['robot'].data
       height = data.root_link_pos_w[:,2] - self.env.unwrapped.scene.env_origins[:,2]
       fr_error_squared += mask * self.term.fr_error.square().sum(-1)
       max_height = torch.where(mask, torch.maximum(max_height, height), max_height)
       upright_frames += mask * ((data.projected_gravity_b[:,0]<-.8) & (height>.44))
       actions = self.alg.act(obs)
+      # Snapshot before physics/autoreset, including the impending one-off
+      # velocity addition. Reference starts otherwise reused stale live buffers.
+      pending=self.term.pending_initial_impulse.to(self.device)[:,None]
+      start_linear[starting]=(data.root_link_lin_vel_w.to(self.device)+self.term.initial_impulse[:,:3].to(self.device)*pending)[starting]
+      start_angular[starting]=(data.root_link_ang_vel_w.to(self.device)+self.term.initial_impulse[:,3:].to(self.device)*pending)[starting]
+      start_error[starting]=self.term.fr_error.to(self.device).norm(dim=-1)[starting]
       obs, rewards, dones, extras = self.env.step(actions.to(self.env.device))
       obs, rewards, dones = obs.to(self.device), rewards.to(self.device), dones.to(self.device)
-      start_linear[starting]=self.term.start_linear_velocity.to(self.device)[starting]
-      start_angular[starting]=self.term.start_angular_velocity.to(self.device)[starting]
-      start_error[starting]=self.term.start_fr_error.to(self.device)[starting]
       recorded_start |= starting
       if not all(torch.isfinite(v).all() for v in obs.values()) or not torch.isfinite(rewards).all():
         raise FloatingPointError('Nonfinite bridge observations or rewards')
@@ -131,6 +148,7 @@ class BridgeOnPolicyRunner(MjlabOnPolicyRunner):
       # Bridge timeouts and target failures are actual terminal objectives;
       # suppress generic continuing-task timeout bootstrapping.
       self.alg.process_env_step(obs, rewards, dones, {})
+      for name,phase in phases.items(): reward_phases[name]+=rewards*mask*phase
       verified |= (self.term.action_owner.to(self.device) == VERIFY) & active
       event = self.term.outcome_event.to(self.device)
       ended = active & ((event != 0) | (dones > 0))
@@ -142,7 +160,8 @@ class BridgeOnPolicyRunner(MjlabOnPolicyRunner):
         result[missing] = torch.where(st.lengths[ids][missing] > 0, -1, -2)
         outcome[ids] = result
         reason[ids] = self.term.event_reason.to(self.device)[ids]
-        feedback = torch.where(result == 1, 20., torch.where(result == -1, -20., 0.))
+        feedback = torch.where(result == -1, -5., 0.)
+        first_stand[ids]=self.term.completed_first_stand_time.to(self.device)[ids]
         tail_steps = self.term.tail_steps.to(self.device)[ids].clone()
         st.finish(ids, feedback, tail_steps, gamma=self.alg.gamma, discount_tail=False)
         finished[ids] = True
@@ -152,7 +171,7 @@ class BridgeOnPolicyRunner(MjlabOnPolicyRunner):
       # A bounded guard is a failed attempt, never a successful unresolved tail.
       ids = (~finished).nonzero().flatten()
       outcome[ids] = torch.where(st.lengths[ids] > 0, -1, -2)
-      st.finish(ids, torch.where(st.lengths[ids] > 0, -20., 0.),
+      st.finish(ids, torch.where(st.lengths[ids] > 0, -5., 0.),
         self.term.tail_steps.to(self.device)[ids], gamma=self.alg.gamma, discount_tail=False)
       reason[ids] = 99
     lengths = st.lengths.clone()
@@ -170,6 +189,23 @@ class BridgeOnPolicyRunner(MjlabOnPolicyRunner):
       'mean_start_angular_speed_rad_s':float(start_angular[recorded_start].norm(dim=-1).mean()) if recorded_start.any() else 0.,
       'mean_start_fr_error_m':float(start_error[recorded_start].mean()) if recorded_start.any() else 0.,
       'reason_counts':{str(int(r)):int((reason == r).sum()) for r in reason.unique()}}
+    metrics['tracking_successes']=int((outcome==1).sum()) if not self.term.cfg.verify_handoff else 0
+    metrics['course_stage']=self.term.course_stage
+    metrics['course_level']=self.term.course.level
+    metrics['live_probability']=self.term.course.live_probability
+    metrics['randomization_fraction']=self.term.course.randomization_fraction
+    metrics['reward_integrals_by_phase']={name:float(values.sum()) for name,values in reward_phases.items()}
+    metrics['by_start']={}
+    for index,label in enumerate(('full_reference','rise_reference','endpoint_reference','live_source')):
+      subset=(start_kind==index)&(lengths>0)
+      finite=subset & torch.isfinite(first_stand)
+      metrics['by_start'][label]=dict(attempts=int(subset.sum()),successes=int(((outcome==1)&subset).sum()),
+        stood_within5s=int((finite & (first_stand<=5.)).sum()),
+        mean_first_stand_seconds=float(first_stand[finite].mean()) if finite.any() else None)
+    # A whole packed batch uses one fixed course. Promote only after collection
+    # so auto-reset worlds cannot change the training regime of active attempts.
+    self.term.course.record((outcome==1).cpu().tolist(),full_start.cpu().tolist(),
+      live_start.cpu().tolist(),step=self.env.unwrapped.common_step_counter)
     for label, subset in (('stationary', ~moving), ('moving', moving)):
       metrics[label] = {'attempts':int(subset.sum()),
         'source_yield':float((lengths[subset] > 0).float().mean()) if subset.any() else 0.,
@@ -209,6 +245,9 @@ class BridgeOnPolicyRunner(MjlabOnPolicyRunner):
         metrics.update(iteration=it, updates=self.updates,
           collection_seconds=collected-start, update_seconds=elapsed-collected,
           losses=losses)
+        std=self.alg.actor.output_std.detach().reshape(-1,12)[0]
+        metrics['action_std_by_joint']=std.cpu().tolist()
+        metrics['pd_target_std_rad_by_joint']=(std*self.action.cfg.scale).cpu().tolist()
         print('BRIDGE_PROGRESS '+json.dumps(metrics), flush=True)
         if metrics_path:
           with metrics_path.open('a') as stream: stream.write(json.dumps(metrics)+'\n')
@@ -221,6 +260,10 @@ class BridgeOnPolicyRunner(MjlabOnPolicyRunner):
           for key, value in losses.items(): self.logger.writer.add_scalar('Loss/'+key, value, it)
           self.logger.writer.add_scalar('Loss/learning_rate', self.alg.learning_rate, it)
           self.logger.writer.add_scalar('Policy/mean_std', self.alg.actor.output_std.mean().item(), it)
+          from .experts import JOINT_NAMES
+          for joint,value,target in zip(JOINT_NAMES,metrics['action_std_by_joint'],metrics['pd_target_std_rad_by_joint']):
+            self.logger.writer.add_scalar('Policy/std/'+joint,value,it)
+            self.logger.writer.add_scalar('Policy/target_std_rad/'+joint,target,it)
         if metrics_path and it % self.cfg['save_interval'] == 0:
           self.save(str(metrics_path.parent/f'model_{it}.pt'))
       if metrics_path:
@@ -243,7 +286,10 @@ class BridgeOnPolicyRunner(MjlabOnPolicyRunner):
     # Static interface and controls (not mutable phase/counters).
     from src.tasks.pedipulation.robot import SNAPSHOT_PATH
     robot_cfg = self.env.unwrapped.cfg.scene.entities['robot']
-    return dict(version=2, task='pedipulation_bridge_t', handoff=BRIDGE_CONTRACT,
+    command.update({key:getattr(self.term.cfg,key) for key in (
+      'min_stage_steps','min_curriculum_episodes','success_window','promotion_success',
+      'undisturbed_probability')})
+    return dict(version=3, task='pedipulation_bridge_t', handoff=BRIDGE_CONTRACT,
       actor_dim=ACTOR_DIM, critic_dim=CRITIC_DIM, guidance_channels=GUIDANCE_CHANNELS,
       source='loco_pedipulation_t',
       checkpoint_hashes={name:hashlib.sha256(Path(path).read_bytes()).hexdigest()
@@ -254,7 +300,7 @@ class BridgeOnPolicyRunner(MjlabOnPolicyRunner):
       paths_sha256=hashlib.sha256(PATH_ASSET.read_bytes()).hexdigest(),
       default_angles=self.action.default_angles[0].cpu().tolist(),
       clip_actions=self.env.clip_actions, action_scale=self.action.cfg.scale,
-      control_delay=self.action.cfg.delay,
+      control_delay='course2_disturbed_worlds_only',
       control_dt=self.env.unwrapped.step_dt,
       decimation=self.env.unwrapped.cfg.decimation,
       physical_snapshot_sha256=hashlib.sha256(SNAPSHOT_PATH.read_bytes()).hexdigest(),
@@ -262,8 +308,10 @@ class BridgeOnPolicyRunner(MjlabOnPolicyRunner):
         stiffness=act.stiffness, damping=act.damping, effort_limit=act.effort_limit,
         armature=act.armature, frictionloss=act.frictionloss)
         for act in robot_cfg.articulation.actuators],
-      command_parameters=command, terminal_feedback=[-20.,20.],
-      terminal_credit='measured_validation_outcome_no_tail_discount',
+      command_parameters=command, terminal_feedback=[-5.,0.],
+      terminal_credit='tracking_failure_once_last_student_step',
+      actor_initialization='fresh_tracking_actor84',
+      courses=['reference_and_fr','timing_and_recovery','live_source_and_randomization'],
       reward_terms={name:dict(weight=term.weight,params=term.params,
         function=term.func.__module__+'.'+term.func.__name__)
         for name,term in self.env.unwrapped.cfg.rewards.items()},
@@ -271,8 +319,11 @@ class BridgeOnPolicyRunner(MjlabOnPolicyRunner):
       rollout='packed_complete_attempts_expert_steps_excluded_v1')
 
   def save(self, path, infos=None):
+    course=self.term.course.state_dict()
+    course['age_steps']=self.env.unwrapped.common_step_counter-self.term.course.started
     super().save(path, {**(infos or {}), 'bridge_contract':self._contract(),
-      'bridge_training':{'updates':self.updates, 'total_attempts':self.total_attempts}})
+      'bridge_training':{'updates':self.updates, 'total_attempts':self.total_attempts},
+      'bridge_course':course})
 
   def load(self, path, load_cfg=None, strict=True, map_location=None):
     saved = torch.load(path, map_location='cpu', weights_only=False)
@@ -282,4 +333,9 @@ class BridgeOnPolicyRunner(MjlabOnPolicyRunner):
     state = (info or {}).get('bridge_training', {})
     self.updates = state.get('updates', 0)
     self.total_attempts = state.get('total_attempts', 0)
+    if 'bridge_course' in (info or {}):
+      enabled=self.term.course.enabled
+      self.term.course.load_state_dict(info['bridge_course'])
+      self.term.course.enabled=enabled
+      self.term.course.started=self.env.unwrapped.common_step_counter-info['bridge_course'].get('age_steps',0)
     return info

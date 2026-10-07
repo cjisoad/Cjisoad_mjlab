@@ -31,11 +31,16 @@ def fixture(count=4,**overrides):
   robot.set_joint_position_target=lambda values,**kwargs:setattr(robot,'last_target',values.clone())
   env.cfg=SimpleNamespace(decimation=4)
   env.episode_length_buf=torch.zeros(count,dtype=torch.long)
-  cfg=BridgeCommandCfg(**overrides)
+  defaults=dict(initial_stage=2,curriculum_enabled=False,candidate_seconds=.1,bridge_deadline=5.)
+  defaults.update(overrides)
+  cfg=BridgeCommandCfg(**defaults)
   term=BridgeCommand(cfg,env,paths=KnownPaths())
   env.command_manager=SimpleNamespace(get_term=lambda _:term,get_command=lambda _:term.command)
   action=BridgePositionAction(BridgePositionActionCfg(entity_name='robot'),env)
   env.action_manager=SimpleNamespace(get_term=lambda _:action)
+  term.forced_live_probability=1.
+  term.forced_disturbed=overrides.get('initial_impulse_probability',0.)==1.
+  term.cfg.verify_handoff=True
   term.reset(torch.arange(count))
   return env,term,action
 
@@ -202,13 +207,10 @@ class ConfigurationTests(unittest.TestCase):
     from src.tasks.teacher_common.env_cfg import loco_pedipulation_teacher_env_cfg
     cfg=bridge_env_cfg(); source=loco_pedipulation_teacher_env_cfg()
     self.assertEqual(cfg.scene.entities['robot'],source.scene.entities['robot'])
-    self.assertEqual(set(cfg.observations['critic'].terms),set(source.observations['critic'].terms))
-    for name in source.observations['critic'].terms:
-      if name!='policy':
-        self.assertEqual(cfg.observations['critic'].terms[name],source.observations['critic'].terms[name])
+    self.assertEqual(set(cfg.observations['critic'].terms),{'policy','privileged'})
     self.assertEqual(cfg.observations['actor'].terms['policy'].params,
       source.observations['actor'].terms['policy'].params)
-    self.assertEqual(cfg.events,source.events)
+    self.assertEqual(set(cfg.events),{'physics'})
     self.assertEqual(tuple(cfg.terminations),('bridge_outcome',))
     self.assertFalse(cfg.curriculum)
     self.assertIn('support_pose',cfg.rewards)
@@ -217,7 +219,7 @@ class ConfigurationTests(unittest.TestCase):
   def test_shaping_only_rewards_bridge_owned_steps(self):
     env,term,_=fixture()
     term.action_owner[:]=torch.tensor((WARM,PREFIX,BRIDGE,VERIFY))
-    for name in ('fr_tracking','height','orientation','support_pose','fl_position','support','rise_progress'):
+    for name in ('fr_tracking','height','orientation','support_pose','fl_height'):
       values=rewards.shaping(env,name)
       self.assertEqual(values[[0,1,3]].tolist(),[0.,0.,0.])
       self.assertTrue(torch.isfinite(values).all())
@@ -226,7 +228,7 @@ class ConfigurationTests(unittest.TestCase):
 @unittest.skipUnless(Path('src/assets/motions/go2/bridge_target_paths.npz').is_file(),
                      'offline audited bridge paths are required')
 class CpuRuntimeTests(unittest.TestCase):
-  def test_actor73_critic117_frozen_actions_and_events_survive_real_autoreset(self):
+  def test_actor84_critic172_frozen_actions_and_events_survive_real_autoreset(self):
     from mjlab.envs import ManagerBasedRlEnv
     torch.set_num_threads(1)
     cfg=bridge_env_cfg(play=True)
@@ -243,8 +245,8 @@ class CpuRuntimeTests(unittest.TestCase):
         self.assertEqual(model.sensor_reftype[i],mujoco.mjtObj.mjOBJ_XBODY)
         self.assertEqual(model.body(int(model.sensor_refid[i])).name,'robot/base_link')
       obs,_=env.reset()
-      self.assertEqual(obs['actor'].shape,(3,73))
-      self.assertEqual(obs['critic'].shape,(3,117))
+      self.assertEqual(obs['actor'].shape,(3,84))
+      self.assertEqual(obs['critic'].shape,(3,172))
       term=env.command_manager.get_term('twist')
       action=env.action_manager.get_term('joint_pos')
       self.assertIsNone(action.experts)
@@ -254,7 +256,7 @@ class CpuRuntimeTests(unittest.TestCase):
       self.assertEqual(term.outcome_event.tolist(),[-2,-1,-1])
       self.assertEqual(term.action_owner.tolist(),[WARM,BRIDGE,VERIFY])
       self.assertEqual(term.tail_steps.tolist(),[0,0,1])
-      self.assertEqual(term.owner.tolist(),[WARM,WARM,WARM])
+      self.assertEqual(term.owner.tolist(),[BRIDGE,BRIDGE,BRIDGE])
       self.assertTrue(terminated.all())
       self.assertFalse(truncated.any())
       self.assertEqual(reward[[0,2]].tolist(),[0.,0.])

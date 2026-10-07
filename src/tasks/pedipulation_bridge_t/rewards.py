@@ -16,33 +16,21 @@ def _owned(env,values):
 def shaping(env,name):
   term=_term(env); data=env.scene['robot'].data
   if name=='fr_tracking':
-    ramp=((term.progress-.7)/.3).clamp(0.,1.)
-    early,late=term.cfg.fr_tracking_scale
-    scale=early+(late-early)*ramp
-    result=torch.exp(-term.fr_error.square().sum(-1)/scale.square())
+    result=torch.exp(-term.fr_error.square().mean(-1)/term.cfg.fr_tracking_scale[0]**2)
   elif name=='height':
     origins=getattr(env.scene,'env_origins',data.root_link_pos_w.new_zeros(env.num_envs,3))
-    height=(data.root_link_pos_w[:,2]-origins[:,2]-term.reference_height)/.08
+    height=(data.root_link_pos_w[:,2]-origins[:,2]-term.reference_height)/.05
     result=torch.exp(-height.square())
   elif name=='orientation':
-    error=(data.projected_gravity_b-term.reference_gravity)/.35
-    result=torch.exp(-error.square().sum(-1))
+    error=term.orientation_error_b.norm(dim=-1)/(torch.pi/15.)
+    result=torch.exp(-error.square())
   elif name=='support_pose':
     error=(data.joint_pos[:,term.joint_ids][:,term.support_ids]-
-      term.reference_joint_pos[:,term.support_ids])/.5
+      term.reference_joint_pos[:,term.support_ids])/.30
     result=torch.exp(-error.square().mean(-1))
-  elif name=='fl_position':
-    position=to_anchor(term.basis_w,data.site_pos_w[:,term.site_ids[0]]-data.root_link_pos_w)
-    error=(position-term.reference_fl_position)/.10
-    result=torch.exp(-error.square().mean(-1))
-  elif name=='support':
-    ref=term.reference_state
-    rear_weights=ref['contact'][:,2:]
-    recent=((term.rear_contact_age<term.cfg.recent_rear_seconds).float()*rear_weights).sum(-1)
-    fl_weight=ref['contact'][:,0]*(1.-ref['fl_unload'])
-    result=(recent+term.contacts[:,0].float()*fl_weight)/(rear_weights.sum(-1)+fl_weight).clamp_min(1.)
-  elif name=='rise_progress':
-    result=term.rise_progress_delta
+  elif name=='fl_height':
+    error=(data.site_pos_w[:,term.site_ids[0],2]-term.reference_state['fl_height'])/.05
+    result=torch.exp(-error.square())
   else:
     raise ValueError(f'unknown bridge shaping {name!r}')
   return _owned(env,result)
@@ -51,7 +39,14 @@ def shaping(env,name):
 def penalty(env,name):
   term=_term(env); data=env.scene['robot'].data; action=env.action_manager.get_term('joint_pos')
   if name=='action_change':
-    result=(action.raw_action-action.previous_action).square().mean(-1)
+    result=((action.raw_action-action.previous_action)*action.cfg.scale/.05).square().mean(-1)
+  elif name=='support_loss':
+    force=env.scene['feet_ground_contact'].data.force[:,term.contact_order]
+    readiness=(force.norm(dim=-1)/25.).clamp(0.,1.)
+    result=1.-readiness[:,2:].amax(-1)+(1.-readiness[:,0])*(1.-term.reference_fl_unload)
+  elif name=='excessive_force':
+    force=env.scene['feet_ground_contact'].data.force[:,term.contact_order]
+    result=((force.norm(dim=-1)-160.).clamp_min(0.)/160.).square().sum(-1)
   elif name=='slip':
     speed=data.site_lin_vel_w[:,term.site_ids,:2].square().sum(-1)
     result=(speed*term.contacts).sum(-1)
@@ -65,8 +60,11 @@ def penalty(env,name):
     limits=data.actuator_force.new_tensor([35.55 if i%3==2 else 23.7 for i in range(12)])
     result=(data.actuator_force/limits).square().mean(-1)
   elif name=='collision':
-    force=env.scene['nonfoot_contact'].data.force
-    result=(force.reshape(env.num_envs,-1,3).norm(dim=-1)>1.).float().sum(-1)
+    result=data.root_link_pos_w.new_zeros(env.num_envs)
+    for sensor in ('nonfoot_ground_touch','bridge_self_contact'):
+      try: force=env.scene[sensor].data.force
+      except KeyError: continue
+      result+=(force.reshape(env.num_envs,-1,3).norm(dim=-1).amax(-1)>1.).float()
   else:
     raise ValueError(f'unknown bridge penalty {name!r}')
   return _owned(env,result).clamp_max(100.)

@@ -23,8 +23,8 @@ class BridgeContractTests(unittest.TestCase):
   def test_reference_and_rewards_version_the_objective(self):
     runner=contract_runner()
     original=runner._contract()
-    self.assertEqual(original['version'],2)
-    self.assertEqual((original['actor_dim'],original['critic_dim']),(73,117))
+    self.assertEqual(original['version'],3)
+    self.assertEqual((original['actor_dim'],original['critic_dim']),(84,172))
     for key in ('reference_speed_range','reference_blend_seconds','fr_tracking_scale',
                 'initial_impulse_probability','initial_linear_impulse','handoff_linear_speed'):
       self.assertIn(key,original['command_parameters'])
