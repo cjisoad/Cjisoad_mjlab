@@ -21,7 +21,8 @@ from scipy.optimize import least_squares
 from src.tasks.pedipulation.constants import DEFAULT_ANGLES, DESIRED_ANGLES, JOINT_NAMES
 from src.tasks.pedipulation.robot import get_stand_spec
 
-from ..constants import BIPED_HIGH, BIPED_LOW, DZ_MIN, TRIPOD_HIGH
+from ..constants import (BIPED_HIGH, BIPED_LOW, DZ_MIN, TRIPOD_HIGH,
+                         TRIPOD_X_RANGE, TRIPOD_Y_RANGE, BIPED_X_RANGE, BIPED_Y_RANGE)
 
 LOW, HIGH = 0, 1
 FR_JOINTS = JOINT_NAMES[3:6]
@@ -46,8 +47,9 @@ class FootWorkspace:
 @lru_cache(maxsize=8)
 def build_foot_workspace(lift_range=(DZ_MIN, TRIPOD_HIGH),
                          biped_range=(BIPED_LOW, BIPED_HIGH),
-                         max_offset=(.12, .09), biped_offset_x=(-.05, .30),
-                         biped_offset_y=(-.10, .10), grid_points=9):
+                         max_offset=(TRIPOD_X_RANGE[1], TRIPOD_Y_RANGE[1]),
+                         biped_offset_x=BIPED_X_RANGE,
+                         biped_offset_y=BIPED_Y_RANGE, grid_points=9):
   if (len(lift_range) != 2 or len(biped_range) != 2 or len(max_offset) != 2
       or len(biped_offset_x) != 2 or len(biped_offset_y) != 2):
     raise ValueError('Workspace ranges must be (low, high) pairs')

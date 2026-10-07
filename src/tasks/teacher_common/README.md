@@ -131,6 +131,37 @@ python scripts/play.py pedipulation_t --checkpoint-file /absolute/path/model.pt 
 python scripts/play.py loco_pedipulation_t --checkpoint-file /absolute/path/model.pt --viewer viser
 ```
 
+Native MuJoCo keyboard playback supports either teacher and three FR workspace
+modes, selected independently of the checkpoint task:
+
+```bash
+python scripts/keyboard_teacher.py loco_pedipulation_t --device cuda:0 \
+  --workspace quadruped \
+  --checkpoint-file outputs/new_teachers_review_20261006/quadruped/checkpoints/model_9900.pt
+python scripts/keyboard_teacher.py pedipulation_t --device cuda:0 \
+  --workspace biped \
+  --checkpoint-file outputs/new_teachers_review_20261006/biped/checkpoints/model_14600.pt
+```
+
+`--workspace quadruped` selects X [-.12, .12], Y [-.09, .09], Z [.05, .35];
+`--workspace biped` selects X [-.05, .30], Y [-.10, .10], Z [.25, .72];
+`--workspace union` selects their three-dimensional union. These are target
+generation bounds, in meters from the common quadruped FR zero, shared with
+`build_foot_workspace`. Training banks contain the FK/collision-valid subset;
+continuous manual commands within these bounds are not a reachability guarantee.
+The union keeps the separate XYZ bounds at each height. Raising/lowering through
+the overlap clamps XY into the newly entered segment if necessary.
+
+Omitting `--workspace` uses the loaded teacher's own range. Mode selection sets
+the manual target range and does not switch policies. `--num-envs` defaults to 1.
+Focus the MuJoCo window: W/S moves forward/backward, A/D turns, arrows adjust FR
+XY, and Q/E adjusts FR height at .25 m/s. Targets persist on key release. R clears
+the active operation and restores the loaded teacher's default (zero for loco,
+nominal biped offset for stand), including when that default lies outside the
+selected operation range. The first target key then enters the selected range.
+Backspace resets; Space pauses. The overlay shows the selected workspace and
+actual absolute FR offsets. Velocity limits follow the loaded teacher config.
+
 Default PPO training retains physical DR, original source pushes, sensor noise,
 random control delay and stochastic Gaussian exploration. Standing source
 pushes set xy velocity within +/-.4 m/s and angular velocity within +/-.6 rad/s
