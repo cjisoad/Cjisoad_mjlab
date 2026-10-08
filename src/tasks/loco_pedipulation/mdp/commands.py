@@ -12,6 +12,8 @@ from .foot_workspace import FOOT_NAMES, FR_JOINTS, build_foot_workspace
 from .metrics import ManipulationMetrics
 
 QUAD, PREPARE, REACH, HOLD, LOWER, RECOVER = range(6)
+# Unified return reuses the descent slot, preserving the critic's phase layout.
+RETURN = LOWER
 
 
 def smoothstep(value):
@@ -35,6 +37,7 @@ class LocoPedipulationCommandCfg(CommandTermCfg):
   prepare_time: float = .3
   reach_time: float = .7
   recover_time: float = .3
+  unified_return: bool = False
   landing_timeout: float = 2.
   contact_confirmation: float = .06
   velocity_ramp_time: float = .5
@@ -267,7 +270,8 @@ class LocoPedipulationCommand(CommandTerm):
     quad = self.phase == QUAD
     self.reference[quad] = self.foot_pos_anchor[quad]
     self._begin(quad & self.enabled, PREPARE)
-    self._begin((self.phase == PREPARE) & ~self.enabled, RECOVER)
+    self._begin((self.phase == PREPARE) & ~self.enabled,
+                QUAD if self.cfg.unified_return else RECOVER)
     begin_lower = ((self.phase == REACH) | (self.phase == HOLD)) & ~self.enabled
     landing = self.zero.expand(self.num_envs, -1).clone()
     height = (self.robot.data.root_link_pos_w * self.basis_w[:, :, 2]).sum(-1)
@@ -292,13 +296,26 @@ class LocoPedipulationCommand(CommandTerm):
     self._begin(reach & (self.elapsed >= self.cfg.reach_time), HOLD)
     landed = lower & self.contacts[:, self.fr_index]
     self.contact_time = torch.where(landed, self.contact_time + dt, 0.)
-    confirmed = lower & (self.elapsed >= self.cfg.reach_time) & (self.contact_time >= self.cfg.contact_confirmation)
+    if self.cfg.unified_return:
+      # Descent and restoration of support run concurrently. Keep the landing
+      # reference active even if the clock finishes before ground contact.
+      return_time = self.cfg.reach_time + self.cfg.recover_time
+      support_progress = smoothstep(self.elapsed / return_time)
+      self.blend[lower] = (self._blend_start * (1. - support_progress))[lower]
+      confirmed = (lower & (self.elapsed >= return_time)
+                   & (self.contact_time >= self.cfg.contact_confirmation))
+    else:
+      confirmed = (lower & (self.elapsed >= self.cfg.reach_time)
+                   & (self.contact_time >= self.cfg.contact_confirmation))
     self.stats[:, 9] += confirmed
     self.training_metrics.landing_event('confirmed', confirmed)
-    self._begin(confirmed, RECOVER)
-    recover = self.phase == RECOVER
-    self.blend[recover] = (self._blend_start * (1. - smoothstep(self.elapsed / self.cfg.recover_time)))[recover]
-    self._begin(recover & (self.elapsed >= self.cfg.recover_time), QUAD)
+    if self.cfg.unified_return:
+      self._begin(confirmed, QUAD)
+    else:
+      self._begin(confirmed, RECOVER)
+      recover = self.phase == RECOVER
+      self.blend[recover] = (self._blend_start * (1. - smoothstep(self.elapsed / self.cfg.recover_time)))[recover]
+      self._begin(recover & (self.elapsed >= self.cfg.recover_time), QUAD)
 
     limit = self.command.new_tensor(self.cfg.tripod_velocity_limits)
     if self.stage == 1:

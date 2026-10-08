@@ -5,10 +5,12 @@ import re
 
 from mjlab.managers.observation_manager import ObservationTermCfg
 from mjlab.managers.metrics_manager import MetricsTermCfg
+from mjlab.managers.reward_manager import RewardTermCfg
 from src.tasks.leg_manip.env_cfg import leg_manip_env_cfg
 from src.tasks.leg_manip.mdp import observations
 from src.tasks.pedipulation.env_cfg import pedipulation_env_cfg
 from src.tasks.loco_pedipulation.env_cfg import loco_pedipulation_env_cfg
+from src.tasks.loco_pedipulation.mdp import rewards as loco_rewards
 from .commands import PedipulationTeacherCommandCfg, LocoPedipulationTeacherCommandCfg
 from . import observations as teacher_observations
 from .rewards import pedipulation_reward
@@ -39,7 +41,9 @@ def loco_pedipulation_teacher_env_cfg(play=False):
   source_robot = cfg.scene.entities['robot']
   source_com_ranges = cfg.events['base_com'].params['ranges']
   source_command, source_push = cfg.commands['twist'], cfg.events.get('push_robot')
-  cfg.commands = {'twist': LocoPedipulationTeacherCommandCfg(**asdict(source_command))}
+  cfg.commands = {'twist': LocoPedipulationTeacherCommandCfg(
+    **{**asdict(source_command), 'unified_return': True})}
+  cfg.rewards['return_contact'] = RewardTermCfg(func=loco_rewards.return_contact, weight=.5)
   cfg.metrics['anchor_degenerate_fraction'] = MetricsTermCfg(func=anchor_degenerate_fraction)
   cfg.scene.entities['robot'] = deepcopy(common.scene.entities['robot'])
   # Restore the original loco action/observation joint zero and its fixed

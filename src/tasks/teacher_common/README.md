@@ -4,7 +4,7 @@
 `loco_pedipulation_t` is the quadruped/tripod locomotion/FR-operation teacher.
 These tasks prepare independently trained PPO teachers; this change does not
 implement student training, online DAgger collection, or a descent teacher.
-The original task packages and leg_manip/MoE implementations are unchanged.
+The original task behavior and leg_manip/MoE implementations are preserved.
 
 Both actors are MLPs (512/256/128, ELU) with the same **12D action order** as
 the MLP leg_manip. `pedipulation_t` retains a 51D actor; `loco_pedipulation_t`
@@ -53,8 +53,8 @@ Critics retain the respective source layouts: standing 89D (exact scaled
 velocity3 + shared actor first48 + source DR34 + contacts4); locomotion 95D
 (shared48 + exact unscaled velocity3 + gait2 + FR-state18 + feet24). They share
 the exact actor noise draw for the first48, with separate clean velocities.
-The locomotion critic and reward remain unchanged; only its actor receives the
-phase/blend channels. Existing 51D locomotion teacher checkpoints are
+The gait-observation extension retains the locomotion critic layout; only its
+actor receives the phase/blend channels. Existing 51D locomotion teacher checkpoints are
 incompatible with the new 54D actor and must be retrained.
 
 ## Command geometry and the ten-centimeter overlap
@@ -109,7 +109,8 @@ gravity-based posture constraints. Its training and play configs now have
 25 rewards. `handstand_orientation` (-1.) and `orientation_symmetry` (-.5)
 are retained. All remaining weights, parameters, relative ordering and the
 batch-wide height gate are preserved. The original pedipulation task retains
-its 26-reward configuration for comparison; locomotion still has 19 rewards.
+its 26-reward configuration for comparison. The source locomotion task has 19
+rewards; the loco teacher adds `return_contact` for 20 rewards.
 Unchanged formulas do not imply unchanged values: horizontal velocity tracking
 and FR tracking now use the new basis. Standing automatic heading feedback
 also generates wz from the new heading. At a fixed physical state and fixed
@@ -167,7 +168,8 @@ random control delay and stochastic Gaussian exploration. Standing source
 pushes set xy velocity within +/-.4 m/s and angular velocity within +/-.6 rad/s
 every8s. Locomotion source pushes occur every5-6s; the source configuration
 sets xy within +/-.15 m/s and yaw within +/-.2 rad/s (the resulting velocity
-dictionary contains only those three axes). The remaining rewards are not retuned.
+dictionary contains only those three axes). Return-specific reward changes are
+described below.
 `play=True` removes runtime pushes and policy sensor noise, but retains physical
 DR, random action delay and source reset randomness. It is **not** a fully
 nominal-physics evaluation. A nominal evaluation must explicitly control these
@@ -200,6 +202,64 @@ Old X-Z teacher checkpoints are rejected even when network dimensions and
 joint defaults match. Both teachers require fresh training after this change.
 Checkpoint save uses the base runner, avoiding velocity-runner ONNX metadata's
 assumption of a generic joint action. Explicit base ONNX export remains available.
+
+## Unified right-front foot return (2026-10-08)
+
+The loco teacher enables `unified_return` in training and play. `blend=1` still
+means tripod and `blend=0` means quadruped. Canceling an active REACH or HOLD
+enters one RETURN stage, rather than separate LOWER and RECOVER stages:
+
+```text
+REACH / HOLD -> RETURN -> QUAD
+```
+
+RETURN reuses phase index 4 (the LOWER constant is retained as an alias);
+the legacy RECOVER slot at index 5 is unused by this teacher. The critic keeps
+its six phase channels and its 95D layout, and the actor remains 54D. Canceling
+PREPARE, before blend has increased, returns directly to QUAD without counting
+a landing attempt.
+
+During RETURN, the reference smoothly descends over `reach_time` (default
+0.7 s) to the nominal FR XY and the ground-contact height. Ground Z follows
+the actual base height above the flat plane. In parallel,
+
+```text
+blend = blend_at_return_entry * (1 - smoothstep(elapsed / return_time))
+return_time = reach_time + recover_time  # default 1.0 s
+FR support weight = 1 - blend
+```
+
+Starting return partway through REACH preserves the current reference and
+blend. Return finishes only after `return_time` and continuous FR contact above
+1 N for `contact_confirmation` (default 0.06 s). If blend reaches zero without
+contact, the command remains in RETURN and keeps following the ground reference.
+The original failure deadline remains `reach_time + landing_timeout` (default
+2.7 s after entering RETURN), with normal termination punishment on failure.
+Target reactivation interrupts the pending return and starts a new REACH.
+Landing attempts, confirmed returns, timeouts and interrupted returns continue
+to use the existing outcome counters; confirmation now means return completed.
+
+| Reward | Unified RETURN behavior |
+|---|---|
+| FR position tracking, +2.5, tolerance .05 m | Full activation until RETURN ends, independent of blend |
+| Return contact, +.5 | Active for moving and stationary commands; scaled by `(1-blend)` and a smooth contact ramp over the latter half of descent (.35-.7 s by default) |
+| FR slip / excessive force penalties | Recover through the existing `1-blend` support weight |
+| Pose / stand-still | Recover through their existing blend formulas |
+| Gait | Blend other feet normally; override the FR quadruped target to stance throughout RETURN |
+| Generic .10 m clearance | Exclude FR during RETURN so clearance does not oppose descent |
+
+Normal FR gait resumes after QUAD, without resetting the oscillator. Contact
+confirmation is a touch criterion, not proof that FR carries a specific load.
+The existing HOLD-only FR ground-contact penalty is inactive during RETURN.
+
+The source `loco_pedipulation` task defaults `unified_return` to false and
+retains the two-stage behavior. Shared reward functions treat configurations
+without this flag (leg_manip/MoE) as legacy configurations. Existing 54D teacher
+checkpoints have compatible observation/action shapes, but were trained with
+different return behavior. Retrain the teacher to assess the new reward design;
+playing an old checkpoint in the updated environment does not establish that
+the new design has been learned. No FR position/reference actor channels are
+added by this change.
 
 ## Privileged-state options (not enabled by this change)
 

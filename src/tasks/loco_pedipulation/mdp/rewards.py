@@ -5,7 +5,7 @@ import torch
 from src.tasks.velocity.mdp.rewards import variable_posture
 
 from .anchor_frame import to_anchor
-from .commands import HOLD, LOWER, QUAD
+from .commands import HOLD, LOWER, QUAD, RETURN, smoothstep
 
 
 def _term(env):
@@ -61,6 +61,9 @@ def feet_gait(env):
   # Contact and site arrays are explicitly ordered FL, FR, RL, RR.
   quad_stance = ((phase + phase.new_tensor((.5, 0., 0., .5))) % 1.) < .56
   tripod_stance = ((phase + phase.new_tensor((0., 0., 2. / 3., 1. / 3.))) % 1.) < .8
+  if getattr(term.cfg, 'unified_return', False):
+    # During return FR must land; a swing target would oppose its reference.
+    quad_stance[:, term.fr_index] |= term.phase == RETURN
   quad = (quad_stance == contact).float().mean(-1)
   weights = torch.ones_like(contact, dtype=torch.float32)
   weights[:, term.fr_index] = 0.
@@ -74,7 +77,11 @@ def foot_clearance(env, target_height=.1):
   robot = env.scene['robot']
   height = robot.data.site_pos_w[:, term.site_ids, 2]
   speed = robot.data.site_lin_vel_w[:, term.site_ids, :2].norm(dim=-1)
-  cost = (height - target_height).abs() * speed * term.support_weights
+  weights = term.support_weights
+  if getattr(term.cfg, 'unified_return', False):
+    # The generic walking clearance target is above the landing reference.
+    weights[:, term.fr_index] *= (term.phase != RETURN)
+  cost = (height - target_height).abs() * speed * weights
   return cost.sum(-1) * (term.command[:, :3].norm(dim=-1) > .05)
 
 
@@ -99,7 +106,18 @@ def support_contact(env):
 def fr_position_tracking(env, std=.05):
   term = _term(env)
   error = (term.foot_pos_anchor - term.reference).square().sum(-1)
-  return torch.exp(-error / std**2) * term.blend
+  activation = term.blend
+  if getattr(term.cfg, 'unified_return', False):
+    activation = torch.where(term.phase == RETURN, 1., activation)
+  return torch.exp(-error / std**2) * activation
+
+
+def return_contact(env):
+  """Encourage late-descent FR contact for moving and stationary returns."""
+  term = _term(env)
+  late_descent = smoothstep((term.elapsed / term.cfg.reach_time - .5) * 2.)
+  return (term.contacts[:, term.fr_index].float() * (term.phase == RETURN)
+          * (1. - term.blend) * late_descent)
 
 
 def fr_ground_contact(env):

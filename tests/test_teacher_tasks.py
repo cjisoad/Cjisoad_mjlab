@@ -39,7 +39,10 @@ class TeacherConfigurationTests(unittest.TestCase):
         self.assertIn('ang_xz', original.rewards)
         self.assertNotIn('ang_xz', cfg.rewards)
         original.rewards.pop('ang_xz')
-      self.assertEqual(tuple(cfg.rewards), tuple(original.rewards))
+      expected = tuple(original.rewards)
+      if task == 'loco_pedipulation_t':
+        expected += ('return_contact',)
+      self.assertEqual(tuple(cfg.rewards), expected)
       for name, old in original.rewards.items():
         new = cfg.rewards[name]
         self.assertEqual(new.weight, old.weight, (task, name))
