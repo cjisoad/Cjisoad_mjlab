@@ -11,12 +11,13 @@ import time
 class TeacherWorkspace:
   mode: str
   boxes: tuple
+  targets: tuple = ()
 
   def contains(self, offset):
     return any(all(low - 1e-9 <= value <= high + 1e-9
                    for value, (low, high) in zip(offset, box)) for box in self.boxes)
 
-  def project(self, offset):
+  def clip(self, offset):
     # Preserve the requested height before clamping XY. This lets Q/E cross
     # the overlap even when the current XY lies only in the lower segment.
     z = max(min(box[2][0] for box in self.boxes),
@@ -28,14 +29,26 @@ class TeacherWorkspace:
                                 for value, (low, high) in zip((*offset[:2], z), box)))
     return min(candidates, key=lambda point: sum((a - b)**2 for a, b in zip(point, offset)))
 
+  def project(self, offset):
+    projected = self.clip(offset)
+    if self.targets:
+      return min(self.targets, key=lambda point: sum((a - b)**2 for a, b in zip(point, projected)))
+    return projected
+
 
 def workspace_for_mode(mode):
-  from src.tasks.leg_manip.constants import (
-    DZ_MIN, TRIPOD_HIGH, BIPED_LOW, BIPED_HIGH,
-    TRIPOD_X_RANGE, TRIPOD_Y_RANGE, BIPED_X_RANGE, BIPED_Y_RANGE)
-  quad = (TRIPOD_X_RANGE, TRIPOD_Y_RANGE, (DZ_MIN, TRIPOD_HIGH))
+  from src.tasks.leg_manip.constants import DZ_MIN, TRIPOD_HIGH, BIPED_LOW, BIPED_HIGH, BIPED_X_RANGE, BIPED_Y_RANGE
+  from src.tasks.leg_manip.mdp.foot_workspace import LOW
+  from src.tasks.teacher_common.workspace import (
+    LOCO_TEACHER_TRIPOD_X_RANGE, LOCO_TEACHER_TRIPOD_Y_RANGE,
+    loco_teacher_foot_workspace)
+  quad = (LOCO_TEACHER_TRIPOD_X_RANGE, LOCO_TEACHER_TRIPOD_Y_RANGE, (DZ_MIN, TRIPOD_HIGH))
   biped = (BIPED_X_RANGE, BIPED_Y_RANGE, (BIPED_LOW, BIPED_HIGH))
   boxes = {'quadruped': (quad,), 'biped': (biped,), 'union': (quad, biped)}
+  if mode == 'quadruped':
+    bank = loco_teacher_foot_workspace()
+    targets = tuple(map(tuple, bank.offsets[bank.segment == LOW]))
+    return TeacherWorkspace(mode, boxes[mode], targets)
   return TeacherWorkspace(mode, boxes[mode])
 
 
@@ -52,6 +65,7 @@ class TeacherKeyboardController:
   def reset(self):
     self.velocity = [0., 0., 0.]
     self.target = self.idle_target
+    self.requested_target = self.idle_target
     self.target_active = False
 
   @property
@@ -77,13 +91,15 @@ class TeacherKeyboardController:
         previous = 0.
       self.velocity[index] = max(bounds[0], min(bounds[1], previous + sign * rate * dt)) if sign else 0.
     if 'r' in keys:
-      self.target, self.target_active = self.idle_target, False
+      self.target = self.requested_target = self.idle_target
+      self.target_active = False
       return
     movement = (direction('right', 'left'), direction('up', 'down'), direction('q', 'e'))
     if any(movement):
-      origin = self.target if self.target_active else self.workspace.project(self.idle_target)
-      self.target = self.workspace.project(tuple(value + sign * self.target_rate * dt
-                                                for value, sign in zip(origin, movement)))
+      origin = self.requested_target if self.target_active else self.idle_target
+      self.requested_target = self.workspace.clip(
+        tuple(value + sign * self.target_rate * dt for value, sign in zip(origin, movement)))
+      self.target = self.workspace.project(self.requested_target)
       self.target_active = True
 
 

@@ -19,14 +19,26 @@ class TeacherKeyboardTests(unittest.TestCase):
     quad, biped, union = [self.workspace(mode) for mode in ('quadruped', 'biped', 'union')]
     self.assertTrue(quad.contains((-.12, -.09, .05)))
     self.assertTrue(biped.contains((.30, .10, .72)))
-    self.assertFalse(quad.contains((.2, 0., .15)))
+    self.assertFalse(quad.contains((.31, 0., .15)))
     self.assertFalse(biped.contains((-.1, 0., .5)))
     for point in ((-.1, .08, .1), (.3, .1, .6), (0., 0., .3)):
       self.assertTrue(union.contains(point))
     # These are inside the combined bounding box, outside the actual union.
-    for point in ((.2, 0., .1), (-.1, 0., .5), (-.1, .1, .3)):
+    for point in ((.31, 0., .1), (-.1, 0., .5), (-.1, .13, .3)):
       self.assertFalse(union.contains(point))
       self.assertTrue(union.contains(union.project(point)))
+
+  def test_quadruped_keyboard_uses_the_expanded_teacher_target_bank(self):
+    from src.tasks.teacher_common.workspace import (
+      LOCO_TEACHER_TRIPOD_X_RANGE, LOCO_TEACHER_TRIPOD_Y_RANGE)
+    quad = self.workspace('quadruped')
+    self.assertEqual(LOCO_TEACHER_TRIPOD_X_RANGE, (-.30, .30))
+    self.assertEqual(LOCO_TEACHER_TRIPOD_Y_RANGE, (-.12, .12))
+    self.assertTrue(quad.contains((.30, .12, .05)))
+    self.assertTrue(quad.contains((-.30, -.12, .35)))
+    projected = quad.project((.30, .12, .35))
+    self.assertIn(projected, quad.targets)
+    self.assertNotEqual(projected, (.30, .12, .35))
 
   def test_each_mode_reaches_its_full_height_band(self):
     for mode, low, high in (('quadruped', .05, .35), ('biped', .25, .72), ('union', .05, .72)):
@@ -34,16 +46,24 @@ class TeacherKeyboardTests(unittest.TestCase):
         controller = self.controller(mode)
         for _ in range(200):
           controller.update({'q'}, .1)
-        self.assertAlmostEqual(controller.command[5], high)
+        if mode == 'quadruped':
+          self.assertAlmostEqual(controller.requested_target[2], high)
+          self.assertIn(controller.command[3:], controller.workspace.targets)
+        else:
+          self.assertAlmostEqual(controller.command[5], high)
         for _ in range(200):
           controller.update({'e'}, .1)
-        self.assertAlmostEqual(controller.command[5], low)
+        if mode == 'quadruped':
+          self.assertAlmostEqual(controller.requested_target[2], low)
+          self.assertIn(controller.command[3:], controller.workspace.targets)
+        else:
+          self.assertAlmostEqual(controller.command[5], low)
 
   def test_union_crosses_overlap_while_remaining_inside_a_teacher_range(self):
     controller = self.controller('union')
     for _ in range(200):
       controller.update({'left'}, .1)
-    self.assertAlmostEqual(controller.command[3], -.12)
+    self.assertAlmostEqual(controller.command[3], -.30)
     for _ in range(200):
       controller.update({'q'}, .1)
       self.assertTrue(controller.workspace.contains(controller.command[3:]))

@@ -8,10 +8,16 @@ from src.tasks.leg_manip.mdp.foot_workspace import build_foot_workspace, LOW, HI
 from src.tasks.pedipulation.mdp.commands import PedipulationCommand, PedipulationCommandCfg
 from src.tasks.loco_pedipulation.mdp.commands import LocoPedipulationCommand, LocoPedipulationCommandCfg
 from src.tasks.leg_manip.constants import BIPED_HIGH, TRIPOD_HIGH
+from .workspace import loco_teacher_foot_workspace
 
 
 def _create_teacher_gui(term, server, get_env_idx, *, biped):
   from viser import Icon
+  if biped:
+    x_range, y_range, z_high = (-.12, .30), (-.10, .10), BIPED_HIGH
+  else:
+    from .workspace import LOCO_TEACHER_TRIPOD_X_RANGE, LOCO_TEACHER_TRIPOD_Y_RANGE
+    x_range, y_range, z_high = LOCO_TEACHER_TRIPOD_X_RANGE, LOCO_TEACHER_TRIPOD_Y_RANGE, TRIPOD_HIGH
   nominal = term.nominal_biped_offset.tolist() if biped else [0., 0., 0.]
   with server.gui.add_folder('Biped teacher' if biped else 'Loco teacher'):
     manual = server.gui.add_checkbox('Manual', initial_value=False)
@@ -20,8 +26,8 @@ def _create_teacher_gui(term, server, get_env_idx, *, biped):
       for label, (low, high) in zip(('vx', 'vy', 'wz'), bounds)]
     offsets = [server.gui.add_slider(label, min=low, max=high, step=.005, initial_value=value)
       for label, low, high, value in (
-        ('FR dx', -.12, .30, nominal[0]), ('FR dy', -.10, .10, nominal[1]),
-        ('FR dz', 0., BIPED_HIGH if biped else TRIPOD_HIGH, nominal[2]))]
+        ('FR dx', *x_range, nominal[0]), ('FR dy', *y_range, nominal[1]),
+        ('FR dz', 0., z_high, nominal[2]))]
     stop = server.gui.add_button('Stop', icon=Icon.PLAYER_STOP)
     @stop.on_click
     def _(_event):
@@ -156,7 +162,7 @@ class LocoPedipulationTeacherCommandCfg(LocoPedipulationCommandCfg):
 class LocoPedipulationTeacherCommand(LocoPedipulationCommand):
   def __init__(self, cfg, env):
     super().__init__(cfg, env)
-    self.workspace = build_foot_workspace()
+    self.workspace = loco_teacher_foot_workspace()
     self.zero = torch.as_tensor(self.workspace.zero, dtype=torch.float32, device=self.device)
     self.target_bank = torch.as_tensor(self.workspace.offsets[self.workspace.segment == LOW],
       dtype=torch.float32, device=self.device)

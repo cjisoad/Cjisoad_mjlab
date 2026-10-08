@@ -94,6 +94,14 @@ class TeacherConfigurationTests(unittest.TestCase):
       self.assertNotIn('push_robot', play.events)
 
 class TeacherCommandTests(unittest.TestCase):
+  def test_loco_teacher_samples_the_expanded_verified_low_bank(self):
+    _, term = command_fixture('loco_pedipulation_t')
+    bank = term.target_bank
+    self.assertGreater(bank[:, 0].max(), .25)
+    self.assertLessEqual(bank[:, 0].abs().max(), .30 + 1e-6)
+    self.assertGreater(bank[:, 1].abs().max(), .10)
+    self.assertLessEqual(bank[:, 1].abs().max(), .12 + 1e-6)
+
   def test_workspace_keeps_the_ten_centimeter_overlap(self):
     self.assertAlmostEqual(TRIPOD_HIGH-BIPED_LOW, .10)
     for task, low, high in ((TASKS[0], BIPED_LOW, BIPED_HIGH), (TASKS[1], DZ_MIN, TRIPOD_HIGH)):

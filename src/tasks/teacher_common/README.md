@@ -74,10 +74,10 @@ and the existing leg_manip/MoE students retain their old anchor definitions.
 The FR offset is relative to **one quadruped FK zero** in this frame; the world
 goal is `base_position + basis @ (zero + offset)`.
 
-| Teacher | Automatic FR dz range, meters from quadruped zero |
+| Teacher | Automatic FR target range, meters from quadruped zero |
 |---|---|
-| loco_pedipulation_t | .05 to .35 (LOW bank) |
-| pedipulation_t | .25 to .72 (HIGH bank) |
+| loco_pedipulation_t | `dz=.05-.35`; `dx=[-.30,.30]`, `dy=[-.12,.12]` (LOW bank) |
+| pedipulation_t | `dz=.25-.72` (HIGH bank) |
 | Shared height band | **.25 to .35: 10 cm** |
 
 These are vertical-offset bounds, not absolute foot heights. The two banks
@@ -92,6 +92,10 @@ ensure continuous actions.
 
 Automatic targets use the fixed common bank, replacing the legacy source
 workspace's joint_delta/max_offset/lift_range/foot_target_* workspace limits.
+The locomotion teacher uses its own expanded LOW candidate envelope, while
+retaining the bank's FK, Cartesian-path IK, joint-limit and collision filters.
+Quadruped keyboard input uses this same filtered LOW bank and projects a request
+to its nearest verified target.
 Those inherited legacy bank-generation fields do not control the new target
 bank. Source velocity sampling, standing probabilities and curriculum remain;
 loco advances through its original four stages (the full LOW bank is stage3).
