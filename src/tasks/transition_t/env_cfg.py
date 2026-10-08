@@ -83,6 +83,5 @@ def transition_env_cfg(play=False):
     command.sampling_mode = 'start'
     command.pose_range = {}
     command.velocity_range = {}
-    command.foot_range = (0., 0., 0.)
-    command.undisturbed_probability = 1.
+    command.joint_position_range = (0., 0.)
   return cfg

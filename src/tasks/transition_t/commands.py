@@ -9,9 +9,8 @@ import numpy as np
 import torch
 from mjlab.managers import CommandTerm
 from mjlab.tasks.tracking.mdp import MotionCommandCfg as FrameworkMotionCommandCfg
-from mjlab.utils.lab_api.math import quat_apply, quat_inv, quat_mul, yaw_quat
+from mjlab.utils.lab_api.math import quat_apply, quat_inv, quat_mul, yaw_quat, quat_from_euler_xyz, sample_uniform
 from src.tasks.tracking.mdp.commands import MotionCommand, MotionCommandCfg
-from .initialization import ResetSampler
 from .motion import DEFAULT_MOTION_PATH, JOINT_NAMES, TransitionMotion
 
 TRACKED_BODY_NAMES = ('base_link', *(f'{leg}_{part}' for leg in ('FL', 'FR', 'RL', 'RR')
@@ -26,10 +25,7 @@ class TransitionCommandCfg(MotionCommandCfg, FrameworkMotionCommandCfg):
   body_names: tuple[str, ...] = TRACKED_BODY_NAMES
   resampling_time_range: tuple[float, float] = (1.e9, 1.e9)
   first_frame_probability: float = .25
-  undisturbed_probability: float = .25
-  foot_range: tuple[float, float, float] = (.015, .015, .01)
-  soft_limit_factor: float = .98
-  joint_position_range: tuple[float, float] = (0., 0.)
+  joint_position_range: tuple[float, float] = (-.1, .1)
 
   def build(self, env):
     return TransitionCommand(self, env)
@@ -43,7 +39,7 @@ class TransitionCommand(MotionCommand):
     self.reference = TransitionMotion(cfg.motion_file)
     if not math.isclose(env.step_dt, 1/self.reference.fps, rel_tol=0., abs_tol=1e-9):
       raise ValueError('control period must match the 50 Hz reference')
-    for probability in (cfg.first_frame_probability, cfg.undisturbed_probability):
+    for probability in (cfg.first_frame_probability,):
       if not 0. <= probability <= 1.:
         raise ValueError('sampling probabilities must be in [0, 1]')
     if cfg.sampling_mode not in ('adaptive', 'uniform', 'start'):
@@ -86,15 +82,8 @@ class TransitionCommand(MotionCommand):
     for name in ('error_anchor_pos', 'error_anchor_rot', 'error_anchor_lin_vel', 'error_anchor_ang_vel',
                  'error_body_pos', 'error_body_rot', 'error_body_lin_vel', 'error_body_ang_vel',
                  'error_joint_pos', 'error_joint_vel', 'sampling_entropy', 'sampling_top1_prob',
-                 'sampling_top1_bin', 'ik_fallback', 'initial_disturbed', 'initial_scale'):
+                 'sampling_top1_bin'):
       self.metrics[name] = torch.zeros(self.num_envs, device=self.device)
-    self.reset_sampler = ResetSampler(env.sim.mj_model, JOINT_NAMES, self.device, cfg.soft_limit_factor)
-    # Go2's named foot body and foot site must have the same origin.
-    if not torch.allclose(self.reset_sampler.site_positions, torch.zeros_like(self.reset_sampler.site_positions)):
-      raise ValueError('foot body/site offset requires explicit conversion')
-    foot_ids = [self.reference.body_name_to_index[f'{leg}_foot'] for leg in ('FL','FR','RL','RR')]
-    if not np.allclose(self.reference.body_pos_w[:, foot_ids], self.reference.foot_pos_w, atol=1e-5):
-      raise ValueError('reference foot body/site positions disagree')
     self._ghost_model = None
     self._ghost_color = np.array(cfg.viz.ghost_color, dtype=np.float32)
     self._refresh_relative()
@@ -143,6 +132,8 @@ class TransitionCommand(MotionCommand):
     return self.body_ang_vel_w[:, self.motion_anchor_body_index]
 
   def _resample_command(self, env_ids):
+    if len(env_ids) == 0:
+      return
     if self.cfg.sampling_mode == 'start':
       self.time_steps[env_ids] = 0
     else:
@@ -162,16 +153,30 @@ class TransitionCommand(MotionCommand):
     anchor = self.motion_anchor_body_index
     root = torch.cat((self.motion.body_pos_w[frames, anchor], self.motion.body_quat_w[frames, anchor],
                       self.motion.body_lin_vel_w[frames, anchor], self.motion.body_ang_vel_w[frames, anchor]), -1)
-    result = self.reset_sampler.sample(root, self.motion.joint_pos[frames], self.motion.foot_pos_w[frames],
-      self.motion.contact[frames], self.cfg.pose_range, self.cfg.velocity_range,
-      self.cfg.foot_range, self.cfg.undisturbed_probability)
-    world_root = result['root_state'].clone()
+    ranges = torch.tensor(
+      [self.cfg.pose_range.get(key, (0., 0.)) for key in ('x', 'y', 'z', 'roll', 'pitch', 'yaw')],
+      device=self.device,
+    )
+    pose_delta = sample_uniform(ranges[:, 0], ranges[:, 1], (len(env_ids), 6), device=self.device)
+    root[:, :3] += pose_delta[:, :3]
+    root[:, 3:7] = quat_mul(
+      quat_from_euler_xyz(*pose_delta[:, 3:].unbind(-1)), root[:, 3:7]
+    )
+    velocity_ranges = torch.tensor(
+      [self.cfg.velocity_range.get(key, (0., 0.)) for key in ('x', 'y', 'z', 'roll', 'pitch', 'yaw')],
+      device=self.device,
+    )
+    velocity_delta = sample_uniform(velocity_ranges[:, 0], velocity_ranges[:, 1], (len(env_ids), 6), device=self.device)
+    root[:, 7:] += velocity_delta
+    joint_pos = self.motion.joint_pos[frames].clone()
+    joint_pos += torch.empty_like(joint_pos).uniform_(*self.cfg.joint_position_range)
+    limits = self.robot.data.soft_joint_pos_limits[env_ids]
+    joint_pos = torch.clamp(joint_pos, limits[:, :, 0], limits[:, :, 1])
+    world_root = root
     world_root[:, :3] += self._env.scene.env_origins[env_ids]
-    self.robot.write_joint_state_to_sim(result['joint_pos'], self.motion.joint_vel[frames], env_ids=env_ids)
+    self.robot.write_joint_state_to_sim(joint_pos, self.motion.joint_vel[frames], env_ids=env_ids)
     self.robot.write_root_state_to_sim(world_root, env_ids=env_ids)
     self.robot.clear_state(env_ids=env_ids)
-    for key, source in (('ik_fallback','fallback'), ('initial_disturbed','disturbed'), ('initial_scale','scale')):
-      self.metrics[key][env_ids] = result[source].float()
     # Derived body tensors still describe the old episode until sim.forward().
     # Use the root state just written for reset environments' relative targets.
     actual_pos = self.robot_anchor_pos_w.clone()

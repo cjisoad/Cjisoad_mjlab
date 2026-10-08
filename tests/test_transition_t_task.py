@@ -24,7 +24,8 @@ class Robot:
       body_link_quat_w=torch.zeros(n, 29, 4),
       body_link_lin_vel_w=torch.zeros(n, 29, 3),
       body_link_ang_vel_w=torch.zeros(n, 29, 3),
-      joint_pos=torch.zeros(n, 12), joint_vel=torch.zeros(n, 12))
+      joint_pos=torch.zeros(n, 12), joint_vel=torch.zeros(n, 12),
+      soft_joint_pos_limits=torch.tensor([-4., 4.]).expand(n, 12, 2).clone())
     self.data.body_link_quat_w[..., 0] = 1.
 
   def find_bodies(self, names, preserve_order=True):
@@ -53,7 +54,7 @@ def make_command(n=3, **overrides):
     termination_manager=SimpleNamespace(terminated=torch.zeros(n, dtype=torch.bool),
       time_outs=torch.zeros(n, dtype=torch.bool)), episode_length_buf=torch.full((n,), 300))
   cfg = TransitionCommandCfg(sampling_mode='start', pose_range={}, velocity_range={},
-    foot_range=(0., 0., 0.), **overrides)
+    joint_position_range=(0., 0.), **overrides)
   command = TransitionCommand(cfg, env)
   env.command_manager = SimpleNamespace(get_term=lambda name: command)
   return command, env, robot
@@ -68,7 +69,8 @@ def test_cfg_preserves_tracking_interface_and_go2_contract():
   assert isinstance(command, (FrameworkCfg, LocalCfg))
   assert isinstance(command, FrameworkCfg) and isinstance(command, LocalCfg)
   assert command.first_frame_probability == .25
-  assert command.undisturbed_probability == .25
+  assert command.joint_position_range == (-.1, .1)
+  assert not hasattr(command, "foot_range")
   assert len(TRACKED_BODY_NAMES) == 13
   assert cfg.decimation * cfg.sim.mujoco.timestep == .02
   assert cfg.episode_length_s == 8.
@@ -81,7 +83,7 @@ def test_cfg_preserves_tracking_interface_and_go2_contract():
     assert 'sensor_name' not in cfg.observations[group].terms['base_lin_vel'].params
   play = transition_env_cfg(play=True)
   assert play.commands['motion'].sampling_mode == 'start'
-  assert play.commands['motion'].undisturbed_probability == 1.
+  assert play.commands['motion'].joint_position_range == (0., 0.)
   assert play.episode_length_s == 8.
 
 
@@ -197,19 +199,35 @@ def test_base_contact_terminates_immediately_during_grace():
   assert physical_failure(env).tolist() == [True, False, False]
 
 
-def test_reset_frame_and_undisturbed_draw_are_independent():
+def test_reset_adds_joint_noise_and_clips_limits_without_ik():
   cmd, env, robot = make_command(n=128)
-  cmd.cfg.sampling_mode = 'uniform'
-  cmd.cfg.velocity_range = {'x': (-.1, .1)}
-  # Velocity-only perturbations preserve the accepted kinematic state and need
-  # no IK retries, allowing this test to check the two actual sampling draws.
+  cmd.cfg.joint_position_range = (-.1, .1)
+  robot.data.soft_joint_pos_limits[:] = torch.tensor([-.02, .02])
   torch.manual_seed(37)
   cmd._resample_command(torch.arange(128))
-  first = cmd.time_steps == 0
-  disturbed = cmd.metrics['initial_disturbed'].bool()
-  assert first.any() and (~first).any()
-  assert (first & disturbed).any() and (first & ~disturbed).any()
-  assert (~first & disturbed).any() and (~first & ~disturbed).any()
+  written = next(w for w in robot.writes if w[0] == 'joint')
+  assert (written[1] >= -.02).all() and (written[1] <= .02).all()
+  torch.testing.assert_close(written[2], cmd.motion.joint_vel[0].expand(128, -1))
+  assert not hasattr(cmd, 'reset_sampler')
+  assert not any('ik' in name for name in cmd.metrics)
+
+
+def test_reset_base_noise_ranges_and_reference_unchanged():
+  cmd, env, robot = make_command(n=128)
+  cmd.cfg.pose_range = {'x': (-.02, .02)}
+  cmd.cfg.velocity_range = {'x': (-.2, .2)}
+  cmd.cfg.joint_position_range = (-.1, .1)
+  reference = cmd.motion.joint_pos.clone()
+  cmd._resample_command(torch.arange(128))
+  root = next(w[1] for w in robot.writes if w[0] == 'root')
+  delta = root[:, 0] - env.scene.env_origins[:, 0] - cmd.motion.body_pos_w[0, 0, 0]
+  assert (delta.abs() <= .02002).all() and delta.std() > .005
+  velocity = root[:, 7] - cmd.motion.body_lin_vel_w[0, 0, 0]
+  assert (velocity.abs() <= .20001).all() and velocity.std() > .05
+  joints = next(w[1] for w in robot.writes if w[0] == 'joint')
+  assert ((joints-reference[0]).abs() <= .10001).all()
+  assert (joints-reference[0]).std() > .02
+  torch.testing.assert_close(reference, cmd.motion.joint_pos)
 
 
 def test_reset_age_tracks_real_environment_steps_without_reset_frame_skip():

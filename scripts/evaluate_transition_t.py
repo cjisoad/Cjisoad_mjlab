@@ -64,7 +64,7 @@ def main():
   from src.tasks.transition_t.rl import TransitionOnPolicyRunner, transition_ppo_runner_cfg
   torch.set_num_threads(1)
   groups = {}
-  for group_index, group in enumerate(('nominal', 'base', 'feet', 'combined')):
+  for group_index, group in enumerate(('nominal', 'base', 'joints', 'combined')):
     cfg = transition_env_cfg(play=True)
     cfg.scene.num_envs = 1
     cfg.seed = args.seed + group_index
@@ -72,8 +72,7 @@ def main():
     training = transition_env_cfg().commands['motion']
     cmd.pose_range = training.pose_range if group in ('base', 'combined') else {}
     cmd.velocity_range = training.velocity_range if group in ('base', 'combined') else {}
-    cmd.foot_range = training.foot_range if group in ('feet', 'combined') else (0., 0., 0.)
-    cmd.undisturbed_probability = 0. if group != 'nominal' else 1.
+    cmd.joint_position_range = training.joint_position_range if group in ('joints', 'combined') else (0., 0.)
     cmd.sampling_mode = 'start'
     if args.motion_file: cmd.motion_file = str(args.motion_file)
     latest = {}
@@ -124,8 +123,7 @@ def main():
           linear_velocity_delta=(term.robot_anchor_lin_vel_w-term.anchor_lin_vel_w)[0].tolist(),
           angular_velocity_delta=(term.robot_anchor_ang_vel_w-term.anchor_ang_vel_w)[0].tolist(),
           foot_position_delta=(robot.data.body_link_pos_w[:, foot_ids]-term.body_pos_w[:, ref_ids])[0].tolist(),
-          ik_fallback=bool(term.metrics['ik_fallback'][0]),
-          perturbation_scale=float(term.metrics['initial_scale'][0]),
+          joint_position_delta=(term.robot_joint_pos-term.joint_pos)[0].tolist(),
         )
         hold = EndpointHold(env.step_dt)
         completed = held = False
@@ -149,7 +147,6 @@ def main():
       groups[group] = dict(
         episodes=len(episodes), full_motion_completion_rate=float(np.mean([e['full_motion_completed'] for e in episodes])),
         endpoint_hold_rate=float(np.mean([e['endpoint_held'] for e in episodes])),
-        ik_fallback_rate=float(np.mean([e['initial']['ik_fallback'] for e in episodes])),
         termination_causes=dict(Counter(c for e in episodes for c in e['termination_causes'])),
         records=episodes)
       motion_sha256 = term.reference.sha256

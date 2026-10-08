@@ -52,7 +52,8 @@ class TransitionOnPolicyRunner(MjlabOnPolicyRunner):
       digest.update(name.encode())
       digest.update(getattr(model, name).tobytes())
     return {
-      'version': 1, 'task': 'transition_t',
+      'version': 2, 'task': 'transition_t',
+      'reset_method': 'beyondmimic_root_joint_noise_v1',
       'observation_schema': 'beyondmimic_actor75_critic192_v1',
       'actor_terms': list(env.cfg.observations['actor'].terms),
       'critic_terms': list(env.cfg.observations['critic'].terms),
