@@ -113,6 +113,10 @@ class LocoPedipulationTests(unittest.TestCase):
     from src.tasks.loco_pedipulation.rl import loco_pedipulation_ppo_runner_cfg
     self.assertFalse(loco_pedipulation_ppo_runner_cfg().actor.obs_normalization)
 
+  def test_default_training_budget_is_13000_iterations(self):
+    from src.tasks.loco_pedipulation.rl import loco_pedipulation_ppo_runner_cfg
+    self.assertEqual(loco_pedipulation_ppo_runner_cfg().max_iterations, 13000)
+
   def test_target_does_not_count_as_motion_in_rewards_or_metrics(self):
     env, term = make_env()
     term.set_command([0], target_offset=(0., 0., .1))

@@ -12,7 +12,7 @@ def loco_pedipulation_ppo_runner_cfg():
   cfg.experiment_name = 'loco_pedipulation'
   cfg.logger = 'tensorboard'
   cfg.upload_model = False
-  cfg.max_iterations = 15000
+  cfg.max_iterations = 13000
   cfg.clip_actions = 10.
   return cfg
 

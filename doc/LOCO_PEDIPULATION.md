@@ -157,7 +157,7 @@ python scripts/list_envs.py --keyword loco_pedipulation
 python scripts/train.py loco_pedipulation --env.scene.num-envs 1024
 ```
 
-Defaults are 4096 environments, 15000 PPO iterations, TensorBoard logging and
+Defaults are 4096 environments, 13000 PPO iterations, TensorBoard logging and
 no model upload. Logs and checkpoints go to `logs/rsl_rl/loco_pedipulation/`.
 To practice the mixed task immediately, bypass automatic curriculum explicitly:
 
@@ -171,7 +171,7 @@ Play a trained checkpoint with interactive Viser controls:
 
 ```bash
 python scripts/play.py loco_pedipulation --num-envs 1 --viewer viser \
-  --checkpoint-file logs/rsl_rl/loco_pedipulation/RUN/model_14999.pt
+  --checkpoint-file logs/rsl_rl/loco_pedipulation/RUN/model_12999.pt
 ```
 
 Replace `RUN` and the checkpoint name with the actual output. In the task's

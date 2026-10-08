@@ -55,6 +55,7 @@ def bridge_ppo_runner_cfg():
   cfg.actor.distribution_cfg['init_std']=.5
   cfg.class_name = 'BridgeOnPolicyRunner'
   cfg.experiment_name = 'pedipulation_bridge_t'
+  cfg.max_iterations = 15000
   return cfg
 
 
