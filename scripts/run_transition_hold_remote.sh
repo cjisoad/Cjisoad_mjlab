@@ -23,14 +23,23 @@ export PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}"
 export MPLCONFIGDIR=/tmp/transition_hold_mpl
 export XDG_CACHE_HOME=/tmp/transition_hold_cache
 export WARP_CACHE_PATH=/tmp/transition_entry_warp
-if [[ -f deployment_files.sha256 ]]; then
-  sha256sum --check deployment_files.sha256 > "$task_run_dir/hash_check.log"
-fi
 "$task_python_bin" - "$task_seed" "$task_bank" "$task_run_dir" "$task_updates" <<'PY'
 from pathlib import Path
-import hashlib,json,sys
+import hashlib,json,os,sys
 import torch
 seed,bank,output=map(Path,sys.argv[1:4])
+manifest=Path('deployment_files.sha256')
+if manifest.exists():
+    lines=[]
+    for line in manifest.read_text().splitlines():
+        expected,name=line.split('  ',1)
+        path=Path(name)
+        # Git stores a symbolic link's target text as its blob content.
+        data=os.readlink(path).encode() if path.is_symlink() else path.read_bytes()
+        if hashlib.sha256(data).hexdigest()!=expected:
+            raise ValueError(f'Deployment hash differs: {name}')
+        lines.append(name+': OK')
+    (output/'hash_check.log').write_text('\n'.join(lines)+'\n')
 saved=torch.load(seed,map_location='cpu',weights_only=False)
 infos=saved.get('infos') or {}
 if 'transition_entry_training' in infos:
