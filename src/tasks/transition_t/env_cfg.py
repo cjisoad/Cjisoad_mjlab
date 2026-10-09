@@ -3,6 +3,7 @@ from copy import deepcopy
 
 from mjlab.envs import mdp
 from mjlab.managers import SceneEntityCfg
+from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.managers.termination_manager import TerminationTermCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from src.assets.robots.unitree_go2.go2_constants import INIT_STATE
@@ -11,6 +12,7 @@ from src.tasks.pedipulation.robot import get_stand_robot_cfg
 from src.tasks.tracking.tracking_env_cfg import make_tracking_env_cfg
 from .commands import TRACKED_BODY_NAMES, TransitionCommandCfg
 from . import terminations
+from .rewards import SustainedStandingReward
 
 
 # Support-leg command dynamics stay unchanged for the frozen endpoint teachers.
@@ -68,6 +70,7 @@ def transition_env_cfg(play=False):
   cfg.events['foot_friction'].params['ranges'] = (.6, 1.2)
   cfg.rewards['motion_global_root_pos'].params['std'] = .15
   cfg.rewards['motion_body_pos'].params['std'] = .15
+  cfg.rewards['standing_hold'] = RewardTermCfg(func=SustainedStandingReward, weight=.1)
   cfg.terminations = {
     'time_out': TerminationTermCfg(func=mdp.time_out, time_out=True),
     'anchor_pos': TerminationTermCfg(func=terminations.tracking_height_failure),
@@ -78,7 +81,7 @@ def transition_env_cfg(play=False):
   cfg.viewer.body_name = 'base_link'
   cfg.viewer.distance = 2.5
   cfg.viewer.elevation = -10.
-  cfg.episode_length_s = 8.
+  cfg.episode_length_s = 10.
   cfg.sim.nconmax = 96
   cfg.sim.njmax = 512
   cfg.sim.contact_sensor_maxmatch = 1024

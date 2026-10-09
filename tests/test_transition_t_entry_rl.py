@@ -32,7 +32,30 @@ class EntryRunnerTests(unittest.TestCase):
     runner._verify_bank_physics = lambda: None
     runner._augmentation_recipe = lambda: {'fixture': 'same'}
     runner._initialization_recipe = lambda: {'fixture': 'same'}
+    runner._reward_recipe = lambda: {'fixture': 'same'}
     return runner
+
+  def test_resume_rejects_changed_reward_or_episode_definition(self):
+    from src.tasks.transition_t.env_cfg import transition_env_cfg
+    runner=self.runner();cfg=transition_env_cfg()
+    runner.env=SimpleNamespace(unwrapped=SimpleNamespace(cfg=cfg))
+    del runner._reward_recipe
+    before=runner._entry_recipe()
+    objective=before['training_objective']
+    self.assertEqual(objective['episode_length_s'],10.)
+    self.assertEqual(objective['rewards']['standing_hold']['weight'],.1)
+    state=dict(recipe=before,course=runner.term.course.state_dict(),
+      updates_completed=10,seed_checkpoint_sha256='seed')
+    with tempfile.TemporaryDirectory() as d:
+      path=Path(d)/'seed.pt';torch.save({'infos':{'transition_entry_training':state}},path)
+      for kind in ('reward','episode','dt_scaling'):
+        with self.subTest(kind=kind):
+          cfg.rewards['standing_hold'].weight=.2 if kind=='reward' else .1
+          cfg.episode_length_s=9. if kind=='episode' else 10.
+          cfg.scale_rewards_by_dt=kind!='dt_scaling'
+          with patch('src.tasks.transition_t.rl.TransitionOnPolicyRunner.load') as parent:
+            with self.assertRaisesRegex(ValueError,'recipe|bank'):runner.resume(path)
+            parent.assert_not_called()
 
   def test_recipe_records_three_sample_standing_policy(self):
     recipe = self.runner()._entry_recipe()

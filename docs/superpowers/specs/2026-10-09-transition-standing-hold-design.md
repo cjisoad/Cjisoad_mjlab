@@ -1,8 +1,7 @@
-# Transition standing hold: three-sample tolerance and reward proposal
+# Transition standing hold: three-sample tolerance and shaping reward
 
 The user approved changing standing eligibility so that its timer resets only
-after three consecutive bad control samples. The reward below is a proposal for
-discussion, not an approved training change.
+after three consecutive bad control samples. The reward and 10 s episodes were subsequently approved by the user, along with pushing the change and a fresh 10,000-update warm start from the original model_30000.pt.
 
 ## Approved timer behavior
 
@@ -25,7 +24,7 @@ existing uninterrupted hold definition. The new standing definition is recorded
 in evaluation JSON and in a new entry-training recipe version, so strict resume
 cannot reuse promotion evidence collected under a different success definition.
 
-## Reward proposal for discussion
+## Approved reward
 
 Recommended additional reward, weight 0.1:
 
@@ -44,14 +43,12 @@ Compared with a one-time success bonus, it provides feedback before a full secon
 has been achieved. Intermittent stepping earns no reward during bad samples, so
 stable standing earns more reward per real second.
 
-Proposed accompanying training change: extend episodes from 8 s to 10 s. The
+Approved accompanying training change: extend episodes from 8 s to 10 s. The
 reference has 351 frames at 50 Hz (7 s), leaving 1 s of terminal practice in an
 8 s full-start episode and 3 s in a 10 s episode. Rewards are scaled by dt, so a
 0.1-weight bounded reward adds at most 0.1 per simulated second (0.002 per good
 control step), or 0.3 over three seconds before accounting for the ramp.
-The proposal needs user review before reward/episode changes or another training
-run. A subsequent run should explicitly fork from the trained policy rather than
-silently resume with a changed reward and promotion definition.
+The new run explicitly forks the original model_30000.pt policy, retaining actor/critic/normalizers and starting fresh optimizer/course state. The completed entry-course model_4999.pt is excluded by the user. Entry recipe v6 records rewards and episode length and rejects strict resume with a changed objective.
 
 ## Verification
 

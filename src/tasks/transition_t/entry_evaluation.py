@@ -11,8 +11,8 @@ import numpy as np
 import torch
 
 from .entry_bank import ERROR_EDGES, LEVELS, SPEED_EDGES
-from .keyboard import endpoint_metrics, standing_conditions, strict_endpoint_candidate
-from .standing import STANDING_HOLD_SECONDS, advance_standing_hold, standing_hold_policy
+from .standing import (STANDING_HOLD_SECONDS, advance_standing_hold, standing_hold_policy,
+  endpoint_metrics, standing_conditions, strict_endpoint_candidate)
 
 
 def json_safe(value):

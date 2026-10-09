@@ -46,7 +46,7 @@ class EntryOnPolicyRunner(TransitionOnPolicyRunner):
       nominal_joint_position_range=cfg.commands['motion'].joint_position_range)
 
   def _entry_recipe(self):
-    return dict(version=5, bank_sha256=self.term.bank.sha256,
+    return dict(version=6, bank_sha256=self.term.bank.sha256,
       teacher_sha256=self.term.bank.metadata['teacher_sha256'], levels=list(LEVELS),
       speed_edges=list(SPEED_EDGES), error_edges=list(ERROR_EDGES),
       split='trajectory_id_modulo_5', sampling='uniform_occupied_bins_then_states',
@@ -57,7 +57,14 @@ class EntryOnPolicyRunner(TransitionOnPolicyRunner):
       collection_physics='nominal_no_domain_randomization',
       target_limiter=self._contract().get('target_limiter'),
       initialization=self._initialization_recipe(),
-      training_augmentation=self._augmentation_recipe())
+      training_augmentation=self._augmentation_recipe(), training_objective=self._reward_recipe())
+
+  def _reward_recipe(self):
+    cfg = self.env.unwrapped.cfg
+    return dict(episode_length_s=cfg.episode_length_s, scale_rewards_by_dt=cfg.scale_rewards_by_dt,
+      rewards=_recipe_value(cfg.rewards), standing_hold=standing_hold_policy(),
+      hold_shaping=dict(version=1, initial_credit=.2, duration_gain=.8,
+        ramp_s=1., maximum_raw_reward=1., bad_sample_reward=0.))
 
   def _verify_bank_physics(self):
     contract = self._contract()

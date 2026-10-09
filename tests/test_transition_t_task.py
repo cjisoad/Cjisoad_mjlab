@@ -73,18 +73,19 @@ def test_cfg_preserves_tracking_interface_and_go2_contract():
   assert not hasattr(command, "foot_range")
   assert len(TRACKED_BODY_NAMES) == 13
   assert cfg.decimation * cfg.sim.mujoco.timestep == .02
-  assert cfg.episode_length_s == 8.
+  assert cfg.episode_length_s == 10.
   assert cfg.actions['joint_pos'].scale == .25
   assert 'push_robot' not in cfg.events
   assert cfg.scene.entities['robot'].articulation.soft_joint_pos_limit_factor == .98
   assert cfg.rewards['motion_global_root_pos'].params['std'] == .15
   assert cfg.rewards['motion_body_pos'].params['std'] == .15
+  assert cfg.rewards['standing_hold'].weight == .1
   for group in ('actor', 'critic'):
     assert 'sensor_name' not in cfg.observations[group].terms['base_lin_vel'].params
   play = transition_env_cfg(play=True)
   assert play.commands['motion'].sampling_mode == 'start'
   assert play.commands['motion'].joint_position_range == (0., 0.)
-  assert play.episode_length_s == 8.
+  assert play.episode_length_s == 10.
 
 
 def test_named_mapping_and_endpoint_hold_never_write_state():

@@ -31,7 +31,7 @@
 
 机器人采用 standing Go2 几何/Ideal PD，名义 Kp=40、Kd=1，hip/thigh effort=23.7 N·m、calf=35.55 N·m；动作零点和 armature 对齐源 loco 教师（hip/thigh 0.01、calf 0.02）。软关节限位设为真实限位的 0.98，以容纳参考中接近限位的姿态，避免 reset 静默裁剪。Ideal PD 执行器限制输出力矩，没有额外实施转速曲线/硬速度裁剪。
 
-保留小幅 startup 随机化：base COM ±0.01 m、foot friction 0.6–1.2、encoder bias ±0.01 rad。关闭继承的运行时 push；标准训练入口没有额外恢复奖励，真实入口课程通过独立脚本启用。play/evaluation 默认关闭 startup 随机化和观测噪声，以单独测量初态鲁棒性。
+保留小幅 startup 随机化：base COM ±0.01 m、foot friction 0.6–1.2、encoder bias ±0.01 rad。关闭继承的运行时 push；真实入口课程通过独立脚本启用。play/evaluation 默认关闭 startup 随机化和观测噪声，以单独测量初态鲁棒性。
 
 ## FR 关节目标限速
 
@@ -44,7 +44,7 @@ Teacher 训练、评估和 actor75 键盘三教师播放共用 `JointTargetLimit
 模拟教师延迟保留上一条策略请求；actor 的上一动作、动作变化奖励和经理历史
 使用最后实际下发的公共坐标目标，避免策略观察到未执行动作。新状态库
 schema 2 保存限速器位置/速度，并校验 action 零点与 scale。旧 schema 1
-状态库需重新采集。checkpoint 契约版本 3、入口 recipe 版本 4 记录这些设置；
+状态库需重新采集。checkpoint 契约版本 3、入口 recipe 版本 6 记录这些设置；
 修改限速配置或入口采样比例后，原 checkpoint 不允许作为同配置断点恢复。
 
 旧 `model_30000.pt` 是未限速策略。课程 warm start 显式迁移其
@@ -60,7 +60,7 @@ actor/critic/normalizer，使用新优化器和课程时钟；普通加载仍拒
 
 ## 时间与切换接口
 
-控制周期 0.02 s，物理步长 0.005 s，episode 8 s。播完参考后保持末帧，目标速度归零；不会在参考末尾重采样或瞬移。PPO runner 禁止仅随机 episode 计数而不匹配物理状态。
+控制周期 0.02 s，物理步长 0.005 s，episode 10 s。7 s 参考结束后，首帧入口约有 3 s 练习保持末帧，目标速度归零；不会在参考末尾重采样或瞬移。PPO runner 禁止仅随机 episode 计数而不匹配物理状态。
 
 跟踪误差终止采用 anchor/四足高度误差 >0.15 m、完整四元数角误差 >0.8 rad。reset 后 0.2 s 内暂缓这些误差终止；计时按实际仿真步数。非有限状态及基座/头部严重触地立即失败。
 
@@ -199,3 +199,18 @@ python scripts/keyboard_teacher.py loco_pedipulation_t \
 或跟踪复位；未连续站稳 1 s，也未进入双足教师。FR 下发目标实测峰值
 2.00001 rad/s、30.00001 rad/s²；实测关节峰值仍约 6.01 rad/s，足端约
 1.57 m/s。限速已执行，但不能把目标限速等同于实测速度硬限制或性能改善。
+
+## 站起后的保持奖励与新续训
+
+新增 `standing_hold` 奖励，权重 0.1：参考完成且当前满足站稳条件时，原始奖励为 `0.2 + 0.8 * min(累计合格站稳时间 / 1 s, 1)`。短暂不合格采样点给零奖励并暂停计时，第 3 个连续不合格采样点清零；恢复合格重新累计。物理失败、跟踪终止和非有限状态给零并立即清零。奖励不包含世界系四足 RMS <6 cm 的严格诊断条件。达到 1 s 后合格采样点持续获得上限奖励，每个 20 ms 控制步最多增加 0.002（权重 0.1 × dt 0.02）。
+
+entry recipe v6 记录完整奖励配置、奖励是否乘 dt、episode 时长和保持奖励公式版本；改变奖励或回合时长不能作为同配置断点恢复。原始 `model_30000.pt` 的 warm start 保留 actor/critic/normalizer，重新开始优化器和课程 0。保留已有状态库、另开 10,000 次更新训练可使用：
+
+```bash
+bash scripts/run_transition_hold_remote.sh \
+  logs/rsl_rl/transition_t/<original-run>/model_30000.pt \
+  /path/to/validated/entries.npz \
+  /path/to/fresh/run 10000
+```
+
+脚本每 250 次更新进行 64 条独立留出轨迹评估，保存 PID、日志和 seed/bank SHA；结束后自动用 `model_9999.pt` 评估四级课程。保持奖励逐环境 reset，单个控制步重复调用不重复增加时间。键盘入口使用相同站稳条件与计时，但不计算训练奖励。
