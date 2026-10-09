@@ -71,7 +71,7 @@ def evaluate(args):
     args.output.write_text(json.dumps(report, indent=2, allow_nan=False)+'\n')
     print('ENTRY_BASELINE '+json.dumps({key: result[key] for key in
       ('level', 'attempts', 'distinct_trajectories', 'full_motion_completions',
-       'successes', 'strict_successes', 'failure_reasons')}), flush=True)
+       'successes', 'failure_reasons')}), flush=True)
   return report
 
 

@@ -159,7 +159,7 @@ class EntryEvaluationHelpers(unittest.TestCase):
       self.assertEqual(int(trials.standing_bad_samples[0]), i)
       self.assertAlmostEqual(float(trials.standing_duration[0]), .02 if i < 3 else 0.)
 
-  def test_tolerated_bad_sample_pauses_standing_but_resets_strict_diagnostic(self):
+  def test_tolerated_bad_sample_pauses_standing_without_strict_diagnostic(self):
     trials = module().EntryTrials(1, .02, device='cpu')
     completed = torch.ones(1, dtype=torch.bool)
     healthy = torch.zeros_like(completed)
@@ -168,7 +168,9 @@ class EntryEvaluationHelpers(unittest.TestCase):
     metrics['rear_supported'][:] = False
     trials.record(completed, metrics, healthy, healthy)
     self.assertAlmostEqual(float(trials.standing_duration[0]), .02)
-    self.assertEqual(float(trials.strict_duration[0]), 0.)
+    record = trials.records()[0]
+    self.assertNotIn('strict_held', record)
+    self.assertNotIn('strict_hold_s', record)
 
   def test_physical_failure_clears_credit_immediately_during_tolerated_gap(self):
     trials = module().EntryTrials(1, .02, device='cpu')
@@ -185,18 +187,6 @@ class EntryEvaluationHelpers(unittest.TestCase):
     self.assertTrue(trials.finished[0])
     self.assertEqual(trials.records()[0]['reason'], 'physical_failure')
 
-  def test_strict_timer_is_independent_from_standing_timer(self):
-    m = module()
-    trials = m.EntryTrials(1, .1, device='cpu')
-    metrics = good_metrics()
-    metrics['feet_rms'][:] = .1
-    completed = torch.ones(1, dtype=torch.bool)
-    healthy = torch.zeros_like(completed)
-    for _ in range(10):
-      trials.record(completed, metrics, healthy, healthy)
-    self.assertTrue(trials.standing_held[0])
-    self.assertFalse(trials.strict_held[0])
-
   def test_physical_failure_wins_over_simultaneous_standing_hold(self):
     m = module()
     trials = m.EntryTrials(1, .1, device='cpu')
@@ -208,7 +198,6 @@ class EntryEvaluationHelpers(unittest.TestCase):
                   termination_reasons={'physical_failure': ~healthy})
     result = trials.records()[0]
     self.assertFalse(result['standing_held'])
-    self.assertFalse(result['strict_held'])
     self.assertEqual(result['reason'], 'physical_failure')
 
   def test_timeout_is_failure_and_cannot_earn_success_after_automatic_reset(self):
@@ -313,7 +302,9 @@ class EntryEvaluationHelpers(unittest.TestCase):
         report = m.evaluate_entries(actor, bank, level=0, device='cpu', attempts=2)
     self.assertEqual(report['attempts'], 2)
     self.assertEqual(report['successes'], 1)
-    self.assertEqual(report['strict_successes'], 0)
+    self.assertNotIn('strict_successes', report)
+    self.assertNotIn('strict_success_rate', report)
+    self.assertNotIn('strict_endpoint', report['standing_hold_policy'])
     self.assertEqual(report['full_motion_completions'], 2)
     self.assertEqual(report['distinct_trajectories'], 2)
     self.assertFalse(report['promotion_evidence_sufficient'])
@@ -324,6 +315,12 @@ class EntryEvaluationHelpers(unittest.TestCase):
     self.assertEqual(report['records'][1]['reason'], 'standing_eligible')
     self.assertEqual(sum(row['attempts'] for row in report['by_actual_speed']), 2)
     self.assertEqual(sum(row['attempts'] for row in report['by_fr_error']), 2)
+    for row in report['by_actual_speed'] + report['by_fr_error']:
+      self.assertNotIn('strict_successes', row)
+      self.assertNotIn('strict_success_rate', row)
+    for row in report['records']:
+      self.assertNotIn('strict_held', row)
+      self.assertNotIn('strict_hold_s', row)
     self.assertEqual(report['evaluation'], 'standing_eligibility')
     self.assertFalse(report['teacher_chain_success_evaluated'])
     self.assertTrue(ScriptedEnv.instances[-1].closed)
