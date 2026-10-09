@@ -12,6 +12,7 @@ import torch
 
 from .entry_bank import ERROR_EDGES, LEVELS, SPEED_EDGES
 from .keyboard import endpoint_metrics, standing_conditions, strict_endpoint_candidate
+from .standing import STANDING_HOLD_SECONDS, advance_standing_hold, standing_hold_policy
 
 
 def json_safe(value):
@@ -51,6 +52,7 @@ class EntryTrials:
     self.dt, self.timeout_s = dt, timeout_s
     self.elapsed = torch.zeros(count, dtype=torch.float64, device=device)
     self.standing_duration = torch.zeros_like(self.elapsed)
+    self.standing_bad_samples = torch.zeros(count, dtype=torch.long, device=device)
     self.strict_duration = torch.zeros_like(self.elapsed)
     self.completed = torch.zeros(count, dtype=torch.bool, device=device)
     self.standing_held = torch.zeros_like(self.completed)
@@ -69,11 +71,13 @@ class EntryTrials:
     self.completed |= completed & alive
     standing = completed & alive & torch.stack(tuple(standing_conditions(metrics).values()), -1).all(-1)
     strict = alive & strict_endpoint_candidate(completed, metrics)
-    self.standing_duration[:] = torch.where(active,
-      torch.where(standing, self.standing_duration+self.dt, 0.), self.standing_duration)
+    duration, bad_samples = advance_standing_hold(self.standing_duration, self.standing_bad_samples,
+      standing, eligible=completed & alive, active=active, dt=self.dt)
+    self.standing_duration.copy_(duration)
+    self.standing_bad_samples.copy_(bad_samples)
     self.strict_duration[:] = torch.where(active,
       torch.where(strict, self.strict_duration+self.dt, 0.), self.strict_duration)
-    self.standing_held |= standing & (self.standing_duration >= 1.-1e-9)
+    self.standing_held |= standing & (self.standing_duration >= STANDING_HOLD_SECONDS-1e-9)
     self.strict_held |= strict & (self.strict_duration >= 1.-1e-9)
     timed_out = active & (truncated | (self.elapsed >= self.timeout_s-1e-9))
     ending = failed | (active & self.standing_held) | timed_out
@@ -102,9 +106,10 @@ class EntryTrials:
     completed = self.completed.cpu().tolist()
     standing, strict = self.standing_held.cpu().tolist(), self.strict_held.cpu().tolist()
     standing_duration, strict_duration = self.standing_duration.cpu().tolist(), self.strict_duration.cpu().tolist()
+    bad_samples = self.standing_bad_samples.cpu().tolist()
     return json_safe([dict(completed=completed[i], standing_held=standing[i], strict_held=strict[i],
       time=elapsed[i], reason=self.reasons[i], termination_reasons=list(self.termination_reasons[i]),
-      standing_hold_s=standing_duration[i], strict_hold_s=strict_duration[i],
+      standing_hold_s=standing_duration[i], standing_bad_samples=bad_samples[i], strict_hold_s=strict_duration[i],
       endpoint_metrics={name: value[i] for name, value in values.items()})
       for i in range(len(self.reasons))])
 
@@ -159,7 +164,8 @@ def evaluate_entries(actor, bank_file, *, level: int, device: str, attempts: int
   """Evaluate a copy of a trained RSL-RL actor, ending at the standing handoff.
 
   Success means full reference completion and the keyboard standing conditions
-  held continuously for one second. No standing teacher is executed here.
+  credited for one second, pausing through at most two consecutive bad samples.
+  The third bad sample clears credit. No standing teacher is executed here.
   """
   if isinstance(level, bool) or not isinstance(level, int) or not 0 <= level < len(LEVELS):
     raise ValueError('Entry evaluation level must select an existing curriculum level')
@@ -224,6 +230,7 @@ def evaluate_entries(actor, bank_file, *, level: int, device: str, attempts: int
         record.update(entry_index=indices[i], **{name: values[i] for name, values in bank_rows.items()})
       return json_safe(dict(evaluation='standing_eligibility', teacher_chain_success_evaluated=False,
         split='holdout', level=level, seed=seed, timeout_s=10., hold_s=1.,
+        standing_hold_policy=standing_hold_policy(),
         distinct_trajectories=len(set(bank_rows['trajectory_id'])),
         distinct_states=len(set(indices)),
         promotion_evidence_sufficient=len(set(bank_rows['trajectory_id'])) >= 64,

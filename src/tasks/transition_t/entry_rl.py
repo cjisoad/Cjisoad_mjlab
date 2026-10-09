@@ -8,6 +8,7 @@ import torch
 
 from .entry_bank import LEVELS, SPEED_EDGES, ERROR_EDGES
 from .rl import TransitionOnPolicyRunner
+from .standing import standing_hold_policy
 
 
 def _recipe_value(value):
@@ -45,13 +46,13 @@ class EntryOnPolicyRunner(TransitionOnPolicyRunner):
       nominal_joint_position_range=cfg.commands['motion'].joint_position_range)
 
   def _entry_recipe(self):
-    return dict(version=4, bank_sha256=self.term.bank.sha256,
+    return dict(version=5, bank_sha256=self.term.bank.sha256,
       teacher_sha256=self.term.bank.metadata['teacher_sha256'], levels=list(LEVELS),
       speed_edges=list(SPEED_EDGES), error_edges=list(ERROR_EDGES),
       split='trajectory_id_modulo_5', sampling='uniform_occupied_bins_then_states',
       evaluation_sampling='uniform_occupied_bins_without_repeated_trajectories_per_pass',
       promotion=dict(min_attempts=64, min_distinct_trajectories=64,
-        standing_rate=.8, consecutive_windows=2),
+        standing_rate=.8, consecutive_windows=2, standing_hold=standing_hold_policy()),
       alignment='reference_first_frame_xy_yaw', tracking_grace_for_entries=0.,
       collection_physics='nominal_no_domain_randomization',
       target_limiter=self._contract().get('target_limiter'),

@@ -1,6 +1,7 @@
 """Entry-course resume refuses changes to the initialization distribution."""
 import importlib
 import importlib.util
+import copy
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -32,6 +33,25 @@ class EntryRunnerTests(unittest.TestCase):
     runner._augmentation_recipe = lambda: {'fixture': 'same'}
     runner._initialization_recipe = lambda: {'fixture': 'same'}
     return runner
+
+  def test_recipe_records_three_sample_standing_policy(self):
+    recipe = self.runner()._entry_recipe()
+    self.assertEqual(recipe['promotion']['standing_hold']['bad_sample_limit'], 3)
+    self.assertEqual(recipe['promotion']['standing_hold']['bad_sample_credit'], 'pause')
+
+  def test_resume_rejects_old_standing_evidence_before_loading_weights(self):
+    runner = self.runner()
+    legacy = copy.deepcopy(runner._entry_recipe())
+    legacy['version'] = 4
+    legacy['promotion'].pop('standing_hold', None)
+    state = dict(recipe=legacy, course=runner.term.course.state_dict(),
+      updates_completed=10, seed_checkpoint_sha256='seed')
+    with tempfile.TemporaryDirectory() as d:
+      p = Path(d)/'old.pt'; torch.save({'infos': {'transition_entry_training': state}}, p)
+      with patch('src.tasks.transition_t.rl.TransitionOnPolicyRunner.load') as parent:
+        with self.assertRaisesRegex(ValueError, 'recipe|bank'):
+          runner.resume(p)
+        parent.assert_not_called()
 
   def test_resume_rejects_changed_entry_split_or_mixture_before_weights(self):
     runner = self.runner()

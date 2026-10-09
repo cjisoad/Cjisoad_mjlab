@@ -20,6 +20,7 @@ from src.tasks.pedipulation_bridge_t.experts import (
 from .commands import TransitionCommand, TransitionCommandCfg
 from .env_cfg import transition_env_cfg
 from . import terminations
+from .standing import STANDING_HOLD_SECONDS, advance_standing_hold
 
 TRIPOD, TRANSITION, BIPED = 0, 2, 3
 STATE_NAMES = {TRIPOD: 'TRIPOD', TRANSITION: 'TRANSITION', BIPED: 'BIPED'}
@@ -101,6 +102,7 @@ class KeyboardTransitionCommand(LocoPedipulationTeacherCommand):
     self.trigger_elapsed = torch.zeros(self.num_envs, device=self.device)
     self.bridge_elapsed = torch.zeros_like(self.trigger_elapsed)
     self.candidate_elapsed = torch.zeros_like(self.trigger_elapsed)
+    self.candidate_bad_samples = torch.zeros_like(self.owner)
     self.strict_elapsed = torch.zeros(self.num_envs, device=self.device, dtype=torch.float64)
     self.strict_held = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
     self.keyboard_command = torch.zeros(self.num_envs, 6, device=self.device)
@@ -120,7 +122,7 @@ class KeyboardTransitionCommand(LocoPedipulationTeacherCommand):
 
   def _resample_command(self, env_ids):
     self.owner[env_ids] = TRIPOD
-    for value in (self.trigger_elapsed, self.bridge_elapsed, self.candidate_elapsed,
+    for value in (self.trigger_elapsed, self.bridge_elapsed, self.candidate_elapsed, self.candidate_bad_samples,
                   self.strict_elapsed, self.keyboard_command, self._command,
                   self.requested_velocity, self.requested_offset):
       value[env_ids] = 0.
@@ -184,6 +186,7 @@ class KeyboardTransitionCommand(LocoPedipulationTeacherCommand):
     self.owner[ids] = TRANSITION
     self.bridge_elapsed[ids] = 0.
     self.candidate_elapsed[ids] = 0.
+    self.candidate_bad_samples[ids] = 0
     self.strict_elapsed[ids] = 0.
     self.strict_held[ids] = False
     self.keyboard_command[ids, :3] = 0.
@@ -210,14 +213,18 @@ class KeyboardTransitionCommand(LocoPedipulationTeacherCommand):
     if len(ids):
       self.start_transition(ids)
     metrics = endpoint_metrics(self._env)
-    ready = transitioning & (self.progress >= 1.) & torch.stack(tuple(standing_conditions(metrics).values()), -1).all(-1)
-    self.candidate_elapsed[:] = torch.where(advancing,
-      torch.where(ready, self.candidate_elapsed+dt, 0.), self.candidate_elapsed)
+    finite = torch.stack([torch.isfinite(value) for value in metrics.values()], -1).all(-1)
+    eligible = transitioning & (self.progress >= 1.) & finite & ~terminations.physical_failure(self._env)
+    ready = eligible & torch.stack(tuple(standing_conditions(metrics).values()), -1).all(-1)
+    duration, bad_samples = advance_standing_hold(self.candidate_elapsed, self.candidate_bad_samples,
+      ready, eligible=eligible, active=advancing, dt=dt)
+    self.candidate_elapsed.copy_(duration)
+    self.candidate_bad_samples.copy_(bad_samples)
     strict = transitioning & strict_endpoint_candidate(self.progress >= 1., metrics)
     self.strict_elapsed[:] = torch.where(advancing,
       torch.where(strict, self.strict_elapsed+dt, 0.), self.strict_elapsed)
     self.strict_held |= self.strict_elapsed >= 1.-1e-9
-    ids = (ready & (self.candidate_elapsed >= 1.-1e-6)).nonzero().flatten()
+    ids = (ready & (self.candidate_elapsed >= STANDING_HOLD_SECONDS-1e-6)).nonzero().flatten()
     if len(ids):
       self.owner[ids] = BIPED
       motion.active[ids] = False
@@ -259,6 +266,7 @@ class KeyboardTransitionCommand(LocoPedipulationTeacherCommand):
       requested_dz=float(self.keyboard_command[world, 5]), executed_dz=float(self.command[world, 5]),
       trigger_height=self.trigger_height, trigger_hold=float(self.trigger_elapsed[world]),
       progress=float(self.progress[world]), standing_hold=float(self.candidate_elapsed[world]),
+      standing_bad_samples=int(self.candidate_bad_samples[world]),
       strict_hold=float(self.strict_elapsed[world]), strict_held=bool(self.strict_held[world]),
       fr_error=float(self.fr_error[world].norm()), feet_rms=float(metrics['feet_rms'][world]), missing=missing)
 
