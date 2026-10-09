@@ -31,7 +31,7 @@ snapshots persist its state and checkpoint loading verifies its configuration.
 - [x] Collect a new bounded CPU bank and perform real legacy warm-start PPO,
   checkpoint reload and bounded playback checks; document bounds, observations,
   limitations and legacy package supersession in the transition README/report.
-- [ ] Review the complete selected diff, run `git diff --check`, stage only
+- [x] Review the complete selected diff, run `git diff --check`, stage only
   transition-related files and required keyboard dependencies, commit and push
   `HEAD:refs/heads/wsl-validation` to origin; verify the remote commit hash.
 
@@ -42,4 +42,9 @@ Final defaults limit only FR to 2/30; support joints are unrestricted after the
 real CPU collection, two PPO updates plus strict resume to three, and 2444
 bounded physics substeps in legacy keyboard playback. Playback timed out and
 does not establish improved success. New server port 42242 is authorized for
-formal deployment and training after the commit is verified.
+formal deployment and training after the commit is verified. Commit 66effff
+was pushed and deployed with all 1016 content hashes verified. CUDA smoke
+passed; official collection produced 99612 states / 4043 trajectories, then
+PID 1509 started the 4096-world 5000-update warm start. Checkpoints through
+model_600 were observed; level0 standing is 35/64 baseline, 20/64 after250,
+17/64 after500, so the course remains0. The long run continues remotely.
