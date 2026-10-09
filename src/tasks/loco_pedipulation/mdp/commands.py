@@ -73,9 +73,10 @@ class LocoPedipulationCommand(CommandTerm):
     # ContactSensor resolves model order, not the order of its pattern tuple.
     self.contact_order = [geoms.index(f'{name}_foot_collision') for name in sites]
     self.fr_index = sites.index('FR')
-    self.workspace = build_foot_workspace(cfg.joint_delta, cfg.max_offset, cfg.lift_range)
+    self.workspace = self._build_workspace()
     self.zero = torch.tensor(self.workspace.zero, device=self.device, dtype=torch.float32)
     self.offsets = torch.tensor(self.workspace.offsets, device=self.device, dtype=torch.float32)
+    self.full_target_indices = torch.arange(len(self.offsets), device=self.device)
     easy = ((self.offsets[:, :2].abs() <= .045).all(-1) & (self.offsets[:, 2] <= .085))
     self.easy_indices = easy.nonzero().flatten()
     if not len(self.easy_indices):
@@ -107,6 +108,9 @@ class LocoPedipulationCommand(CommandTerm):
     self.training_metrics = ManipulationMetrics(self.device)
     self._last_recorded_step = -1
     self._gui = None
+
+  def _build_workspace(self):
+    return build_foot_workspace(self.cfg.joint_delta, self.cfg.max_offset, self.cfg.lift_range)
 
   @property
   def command(self):
@@ -185,7 +189,7 @@ class LocoPedipulationCommand(CommandTerm):
     standing |= active & ((self.stage == 1)
       | (torch.rand(count, device=self.device) < self.cfg.tripod_standing_probability))
     self.requested_velocity[ids[standing]] = 0.
-    bank = self.easy_indices if self.stage < 3 else torch.arange(len(self.offsets), device=self.device)
+    bank = self.easy_indices if self.stage < 3 else self.full_target_indices
     selected = bank[torch.randint(len(bank), (count,), device=self.device)]
     self.requested_offset[ids] = self.offsets[selected]
     self._command[ids, 3:] = self.requested_offset[ids] * active[:, None]

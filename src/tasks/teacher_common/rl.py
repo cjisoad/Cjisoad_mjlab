@@ -100,6 +100,7 @@ class TeacherOnPolicyRunner(MjlabOnPolicyRunner):
     info = {**(infos or {}), 'teacher_contract': self._contract()}
     if self.teacher_task == 'loco_pedipulation_t':
       term = self.teacher_term
+      info['fr_workspace'] = dict(term.workspace.metadata)
       info['loco_pedipulation'] = {'stage': term.stage, 'stage_started': term.stage_started,
         'window': term.curriculum_window.clone(), 'episodes': term.curriculum_episodes,
         'landing_counts': self.logger.landing_totals.clone()}

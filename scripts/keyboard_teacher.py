@@ -36,19 +36,16 @@ class TeacherWorkspace:
     return projected
 
 
-def workspace_for_mode(mode):
+def workspace_for_mode(mode, reachability_cache=None):
+  if mode == 'quadruped':
+    from src.tasks.teacher_common.reachability import ContinuousFootWorkspace, DEFAULT_CACHE
+    return ContinuousFootWorkspace(reachability_cache or DEFAULT_CACHE)
   from src.tasks.leg_manip.constants import DZ_MIN, TRIPOD_HIGH, BIPED_LOW, BIPED_HIGH, BIPED_X_RANGE, BIPED_Y_RANGE
-  from src.tasks.leg_manip.mdp.foot_workspace import LOW
   from src.tasks.teacher_common.workspace import (
-    LOCO_TEACHER_TRIPOD_X_RANGE, LOCO_TEACHER_TRIPOD_Y_RANGE,
-    loco_teacher_foot_workspace)
+    LOCO_TEACHER_TRIPOD_X_RANGE, LOCO_TEACHER_TRIPOD_Y_RANGE)
   quad = (LOCO_TEACHER_TRIPOD_X_RANGE, LOCO_TEACHER_TRIPOD_Y_RANGE, (DZ_MIN, TRIPOD_HIGH))
   biped = (BIPED_X_RANGE, BIPED_Y_RANGE, (BIPED_LOW, BIPED_HIGH))
   boxes = {'quadruped': (quad,), 'biped': (biped,), 'union': (quad, biped)}
-  if mode == 'quadruped':
-    bank = loco_teacher_foot_workspace()
-    targets = tuple(map(tuple, bank.offsets[bank.segment == LOW]))
-    return TeacherWorkspace(mode, boxes[mode], targets)
   return TeacherWorkspace(mode, boxes[mode])
 
 
@@ -67,6 +64,7 @@ class TeacherKeyboardController:
     self.target = self.idle_target
     self.requested_target = self.idle_target
     self.target_active = False
+    self.boundary_limited = False
 
   @property
   def command(self):
@@ -93,13 +91,22 @@ class TeacherKeyboardController:
     if 'r' in keys:
       self.target = self.requested_target = self.idle_target
       self.target_active = False
+      self.boundary_limited = False
       return
     movement = (direction('right', 'left'), direction('up', 'down'), direction('q', 'e'))
     if any(movement):
-      origin = self.requested_target if self.target_active else self.idle_target
-      self.requested_target = self.workspace.clip(
-        tuple(value + sign * self.target_rate * dt for value, sign in zip(origin, movement)))
-      self.target = self.workspace.project(self.requested_target)
+      if hasattr(self.workspace, 'advance'):
+        # Integrate accepted offsets so rejected outward input never builds up.
+        origin = self.target if self.target_active else self.idle_target
+        requested = tuple(value + sign*self.target_rate*dt for value, sign in zip(origin, movement))
+        self.target = self.workspace.advance(origin, requested)
+        self.requested_target = self.target
+        self.boundary_limited = any(abs(a-b) > 1e-6 for a, b in zip(self.target, requested))
+      else:
+        origin = self.requested_target if self.target_active else self.idle_target
+        self.requested_target = self.workspace.clip(
+          tuple(value + sign * self.target_rate * dt for value, sign in zip(origin, movement)))
+        self.target = self.workspace.project(self.requested_target)
       self.target_active = True
 
 
@@ -136,7 +143,9 @@ def parse_args(argv=None):
   parser.add_argument('--device', default='cuda:0')
   parser.add_argument('--num-envs', type=int, default=1)
   parser.add_argument('--workspace', choices=('quadruped', 'biped', 'union'),
-                      help='FR target range; defaults to the loaded teacher range')
+                      help='FR control region; defaults to quadruped or biped according to task')
+  parser.add_argument('--reachability-cache', type=Path,
+                      help='Precomputed continuous FR boundary for quadruped keyboard mode')
   args = parser.parse_args(argv)
   if args.num_envs < 1:
     parser.error('--num-envs must be positive')
@@ -168,7 +177,7 @@ def main():
   device = args.device
   cfg = keyboard_env_cfg(args.task, args.num_envs)
   mode = args.workspace or ('biped' if args.task == 'pedipulation_t' else 'quadruped')
-  workspace = workspace_for_mode(mode)
+  workspace = workspace_for_mode(mode, args.reachability_cache)
   env = keyboard = None
   try:
     keyboard = X11Keyboard()
@@ -203,6 +212,16 @@ def main():
       def tick(self):
         now = time.monotonic()
         if now - self.last_input >= .01:
+          if hasattr(workspace, 'set_frame'):
+            import numpy as np
+            world = self.env_idx
+            robot = env.scene['robot'].data
+            rotation = np.empty(9, dtype=np.float64)
+            mujoco.mju_quat2Mat(rotation, robot.root_link_quat_w[world].detach().cpu().numpy().astype(np.float64))
+            anchor = term.basis_w[world].detach().cpu().numpy()
+            height = float(((robot.root_link_pos_w[world]-env.scene.env_origins[world])
+                            * term.basis_w[world, :, 2]).sum())
+            workspace.set_frame(rotation.reshape(3, 3).T @ anchor, base_height=height)
           controller.update(keyboard.read(), now - self.last_input,
                             focused=keyboard.focused, paused=self._is_paused)
           self.last_input = now
@@ -213,16 +232,19 @@ def main():
       def _set_status_overlay(self, viewer):
         status = self.get_status()
         vx, _, wz, dx, dy, dz = controller.command
-        labels = 'State\nStep\nKeys\nWorkspace\nFR target\nvx\nwz\nFR dx (m)\nFR dy (m)\nFR dz (m)'
+        labels = 'State\nStep\nKeys\nWorkspace\nFR target\nBoundary\nvx\nwz\nFR dx (m)\nFR dy (m)\nFR dz (m)'
         values = (f"{'PAUSED' if status.paused else 'RUNNING'}\n{status.step_count}\n"
                   f"{'ACTIVE' if keyboard.focused else 'INACTIVE'}\n"
                   f"{mode}\n{'ON' if controller.target_active else 'DEFAULT'}\n"
-                  f'{vx:+.2f}\n{wz:+.2f}\n{dx:+.2f}\n{dy:+.2f}\n{dz:+.2f}')
+                  f"{'LIMIT' if controller.boundary_limited else 'FREE'}\n"
+                  f'{vx:+.2f}\n{wz:+.2f}\n{dx:+.3f}\n{dy:+.3f}\n{dz:+.3f}')
         viewer.set_texts((mujoco.mjtFontScale.mjFONTSCALE_150.value,
                           mujoco.mjtGridPos.mjGRID_TOPLEFT.value, labels, values))
 
     print(f'[INFO] Task: {args.task}\n[INFO] Checkpoint: {checkpoint}', flush=True)
     print(f'[INFO] Workspace: {mode}; XYZ boxes (m): {workspace.boxes}', flush=True)
+    if hasattr(workspace, 'grid'):
+      print(f'[INFO] Continuous FR boundary: {workspace.grid.path}; no target snapping or runtime IK.', flush=True)
     print('[INFO] FR offsets are absolute from the shared quadruped zero; R restores the loaded teacher default.', flush=True)
     print('[INFO] Focus the MuJoCo window. WASD moves/turns; arrows adjust FR XY; Q/E adjust height; R clears target; Backspace resets; Space pauses.', flush=True)
     KeyboardViewer().run()

@@ -4,10 +4,10 @@ from dataclasses import dataclass
 import torch
 
 from .anchor_frame import anchor_basis, to_anchor
-from src.tasks.leg_manip.mdp.foot_workspace import build_foot_workspace, LOW, HIGH
+from src.tasks.leg_manip.mdp.foot_workspace import build_foot_workspace, HIGH
 from src.tasks.pedipulation.mdp.commands import PedipulationCommand, PedipulationCommandCfg
 from src.tasks.loco_pedipulation.mdp.commands import LocoPedipulationCommand, LocoPedipulationCommandCfg
-from src.tasks.leg_manip.constants import BIPED_HIGH, TRIPOD_HIGH
+from src.tasks.leg_manip.constants import BIPED_HIGH
 from .workspace import loco_teacher_foot_workspace
 
 
@@ -16,8 +16,8 @@ def _create_teacher_gui(term, server, get_env_idx, *, biped):
   if biped:
     x_range, y_range, z_high = (-.12, .30), (-.10, .10), BIPED_HIGH
   else:
-    from .workspace import LOCO_TEACHER_TRIPOD_X_RANGE, LOCO_TEACHER_TRIPOD_Y_RANGE
-    x_range, y_range, z_high = LOCO_TEACHER_TRIPOD_X_RANGE, LOCO_TEACHER_TRIPOD_Y_RANGE, TRIPOD_HIGH
+    x_range, y_range, z_range = term.workspace.metadata['offset_bounds_m']
+    z_high = z_range[1]
   nominal = term.nominal_biped_offset.tolist() if biped else [0., 0., 0.]
   with server.gui.add_folder('Biped teacher' if biped else 'Loco teacher'):
     manual = server.gui.add_checkbox('Manual', initial_value=False)
@@ -155,6 +155,8 @@ class PedipulationTeacherCommand(PedipulationCommand):
 
 @dataclass(kw_only=True)
 class LocoPedipulationTeacherCommandCfg(LocoPedipulationCommandCfg):
+  workspace_cache: str | None = None
+
   def build(self, env):
     return LocoPedipulationTeacherCommand(self, env)
 
@@ -162,18 +164,11 @@ class LocoPedipulationTeacherCommandCfg(LocoPedipulationCommandCfg):
 class LocoPedipulationTeacherCommand(LocoPedipulationCommand):
   def __init__(self, cfg, env):
     super().__init__(cfg, env)
-    self.workspace = loco_teacher_foot_workspace()
-    self.zero = torch.as_tensor(self.workspace.zero, dtype=torch.float32, device=self.device)
-    self.target_bank = torch.as_tensor(self.workspace.offsets[self.workspace.segment == LOW],
-      dtype=torch.float32, device=self.device)
-    self.offsets = self.target_bank
-    easy = (self.offsets[:, :2].abs() <= .045).all(-1) & (self.offsets[:, 2] <= .085)
-    self.easy_indices = easy.nonzero().flatten()
-    if not len(self.easy_indices):
-      raise ValueError('Common workspace lacks easy tripod targets')
-    self.reference[:] = self.zero
-    self.start[:] = self.zero
-    self.goal[:] = self.zero
+    self.target_bank = self.offsets
+
+  def _build_workspace(self):
+    return (loco_teacher_foot_workspace(self.cfg.workspace_cache)
+            if self.cfg.workspace_cache else loco_teacher_foot_workspace())
 
   @property
   def basis_w(self):
