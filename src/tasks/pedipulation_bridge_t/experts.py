@@ -66,14 +66,16 @@ def teacher_action_to_common(teacher_raw, teacher_zero, common_zero, scale=ACTIO
   return common
 
 
-def validate_teacher_contract(contract, expected_task):
+def validate_teacher_contract(contract, expected_task, *, actor_dim=51):
   """Require the approved observation, command, action, and nominal-pose ABI."""
   if expected_task not in _TASKS.values():
     raise ValueError(f'unknown teacher task {expected_task!r}')
   if not isinstance(contract,Mapping):
     raise ValueError('teacher_contract is missing or invalid')
   biped = expected_task == 'pedipulation_t'
-  required = {'version':2, 'task':expected_task, 'actor_dim':51,
+  if actor_dim not in ((51,) if biped else (51,54)):
+    raise ValueError('Standing teachers require actor51; locomotion teachers require actor51 or actor54')
+  required = {'version':2, 'task':expected_task, 'actor_dim':actor_dim,
     'critic_dim':89 if biped else 95, 'anchor':ANCHOR_CONTRACT,
     'command':'vx_vy_wz_FR_offset_from_quadruped_zero',
     'joint_names':list(JOINT_NAMES), 'action_scale':ACTION_SCALE,
@@ -97,14 +99,17 @@ def validate_teacher_contract(contract, expected_task):
 
 
 class FrozenTeacherActor(nn.Module):
-  """Original 51→512→256→128→12 ELU mean, with no sampling or optimizer."""
-  def __init__(self, actor_state):
+  """Frozen 51/54→512→256→128→12 ELU mean; bridge pairs default to51."""
+  def __init__(self, actor_state, *, input_dim=51):
     super().__init__()
+    if input_dim not in (51,54):
+      raise ValueError('Frozen teacher input dimension must be51 or54')
+    self.input_dim=input_dim
     if not isinstance(actor_state,Mapping):
       raise ValueError('checkpoint actor_state_dict is missing')
     # Construction must not consume the bridge training RNG stream.
     with torch.random.fork_rng(devices=[]):
-      self.mlp = nn.Sequential(nn.Linear(51,512),nn.ELU(),nn.Linear(512,256),
+      self.mlp = nn.Sequential(nn.Linear(input_dim,512),nn.ELU(),nn.Linear(512,256),
         nn.ELU(),nn.Linear(256,128),nn.ELU(),nn.Linear(128,12))
     required = set(self.state_dict()) | {'distribution.std_param'}
     if set(actor_state) != required:
@@ -120,7 +125,7 @@ class FrozenTeacherActor(nn.Module):
       self.load_state_dict({name:value for name,value in actor_state.items()
                            if name != 'distribution.std_param'},strict=True)
     except RuntimeError as error:
-      raise ValueError('checkpoint actor architecture differs from 51/512/256/128/12') from error
+      raise ValueError(f'checkpoint actor architecture differs from {input_dim}/512/256/128/12') from error
     self.requires_grad_(False)
     self.eval()
 
@@ -130,8 +135,8 @@ class FrozenTeacherActor(nn.Module):
 
   @torch.inference_mode()
   def forward(self, observations):
-    if observations.ndim != 2 or observations.shape[-1] != 51:
-      raise ValueError('teacher observations must have shape [N, 51]')
+    if observations.ndim != 2 or observations.shape[-1] != self.input_dim:
+      raise ValueError(f'teacher observations must have shape [N, {self.input_dim}]')
     _finite(observations,'teacher observations')
     output = self.mlp(observations)
     _finite(output,'teacher output')

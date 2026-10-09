@@ -52,7 +52,7 @@ class TransitionOnPolicyRunner(MjlabOnPolicyRunner):
       digest.update(name.encode())
       digest.update(getattr(model, name).tobytes())
     return {
-      'version': 2, 'task': 'transition_t',
+      'version': 3, 'task': 'transition_t',
       'reset_method': 'beyondmimic_root_joint_noise_v1',
       'observation_schema': 'beyondmimic_actor75_critic192_v1',
       'actor_terms': list(env.cfg.observations['actor'].terms),
@@ -65,6 +65,7 @@ class TransitionOnPolicyRunner(MjlabOnPolicyRunner):
       'action_dim': self.alg.actor.distribution.output_dim,
       'action_zero': action.default_angles[0].detach().cpu().tolist(),
       'action_scale': action.cfg.scale, 'action_delay': action.cfg.delay,
+      'target_limiter': action.target_limiter.contract() if action.target_limiter is not None else None,
       'clip_actions': self.env.clip_actions,
       'source_physics_sha256': hashlib.sha256(SNAPSHOT_PATH.read_bytes()).hexdigest(),
       'compiled_physics_sha256': digest.hexdigest(),
@@ -80,11 +81,20 @@ class TransitionOnPolicyRunner(MjlabOnPolicyRunner):
     super().save(path, {**(infos or {}), 'transition_t_contract': self._contract(),
                         'transition_t_sampling': sampling})
 
-  def load(self, path, load_cfg=None, strict=True, map_location=None):
+  def load(self, path, load_cfg=None, strict=True, map_location=None, *, allow_legacy_target_limiter=False):
     saved = torch.load(path, map_location='cpu', weights_only=False)
     metadata = saved.get('infos') or {}
-    if metadata.get('transition_t_contract') != self._contract():
-      raise ValueError('Checkpoint transition_t contract differs in reference, observation, action or physics')
+    current = self._contract()
+    source = metadata.get('transition_t_contract')
+    if source != current:
+      legacy = {key: value for key, value in current.items() if key != 'target_limiter'}
+      legacy['version'] = 2
+      if not (allow_legacy_target_limiter and current.get('version') == 3
+          and current.get('target_limiter') is not None and source == legacy):
+        raise ValueError('Checkpoint transition_t contract differs in reference, observation, action or physics')
+      if load_cfg is None or any(load_cfg.get(key) for key in ('optimizer', 'iteration', 'rnd')):
+        raise ValueError('Legacy target limiter migration loads policy weights only, never optimizer or iteration')
+      print('TRANSITION_TARGET_LIMITER_MIGRATION old unlimited policy; new execution limits require retraining', flush=True)
     sampling = metadata.get('transition_t_sampling', {})
     for name in ('bin_failed_count', '_current_bin_failed'):
       value = sampling.get(name)

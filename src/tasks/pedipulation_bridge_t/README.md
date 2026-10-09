@@ -76,6 +76,28 @@ PYTHONPATH=. python scripts/evaluate_bridge_tracking.py --checkpoint /path/to/v3
 
 评估case有 `nominal`、`fr_diversity`、`reference_disturbed`、`live_source`、`live_handoff`。native使用相同动力学控制流程和FR参考标记，非运动学qpos播放。
 
+## 键盘三教师状态机
+
+`scripts/keyboard_teacher.py loco_pedipulation_t --workspace union` 支持单环境
+“三足 → 过渡 → 双足”。默认触发高度为FR dz0.33m；实际FR误差小于0.10m并保持0.10s后接管。
+过渡阶段参考完成且站稳条件连续满足1s才切换双足，随后恢复键盘操作。
+键盘接管保留姿态、高度、支撑及速度等站稳门槛；FR误差仅显示诊断值，不阻止双足接管。
+三足进入过渡时的FR误差门槛仍为0.10m；训练与批量评估仍使用原完整成功判据。
+切换保持同一物理状态、速度、动作历史和参数；过渡超时10s暂停并显示未满足条件。
+Backspace完整复位到三足，R在稳定控制阶段恢复当前教师默认目标。
+
+```bash
+MUJOCO_GL=glfw PYTHONPATH=. python scripts/keyboard_teacher.py loco_pedipulation_t \
+  --workspace union --num-envs 1 --device cuda:0 \
+  --checkpoint-file outputs/new_teachers_review_20261006/quadruped/checkpoints/model_9900.pt \
+  --bridge-checkpoint-file outputs/bridge_tracking_v3_recovered_20261008/model_900.pt \
+  --biped-checkpoint-file outputs/new_teachers_review_20261006/biped/checkpoints/model_14600.pt
+```
+
+命令支持兼容的actor51或54三足教师；桥接actor84与双足actor51分别加载，原桥接训练契约仍严格校验。
+`--transition-margin 0.02`表示距三足0.35m上限提前2cm触发。
+当前model900尚未达到训练成功判据，而且0.33m高于原真实入口配置0.25–0.28m，需结合播放观察实际过渡效果。
+
 Checkpoint契约版本3记录84/172观测、教师/参考/路径哈希、公共物理和执行器、奖励、课程控制及终端语义。旧v2模型（包括model330）以及旧过渡模型不能直接恢复训练，应开新run。
 
 计划：`docs/superpowers/plans/2026-10-08-robust-transition-tracking.md`。

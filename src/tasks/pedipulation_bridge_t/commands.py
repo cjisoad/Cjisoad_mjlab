@@ -503,21 +503,29 @@ class BridgeCommand(LocoPedipulationTeacherCommand):
       hard |= force.reshape(self.num_envs,-1,3).norm(dim=-1).amax(-1)>10.
     return hard
 
-  def _biped_candidate(self):
+  def biped_conditions(self):
+    """Named handoff gates, shared by training and keyboard diagnostics."""
     data=self.robot.data
     origins=getattr(self._env.scene,'env_origins',data.root_link_pos_w.new_zeros(self.num_envs,3))
     gravity=data.projected_gravity_b
     ref=self.reference_state
     orientation=2.*torch.acos((data.root_link_quat_w*ref['quaternion']).sum(-1).abs().clamp(0.,1.))
-    return ((orientation<torch.pi/12.) &
-      ((data.root_link_pos_w[:,2]-origins[:,2]-ref['height']).abs()<.08) &
-      (data.root_link_pos_w[:,2]-origins[:,2]>.44) & (gravity[:,0]<-.8) &
-      (gravity[:,2].abs()<.35) & (data.root_link_ang_vel_b.norm(dim=-1)<2.) &
-      (data.root_link_lin_vel_w.norm(dim=-1)<self.cfg.handoff_linear_speed) &
-      ~self.contacts[:,:2].any(-1) &
-      self.contacts[:,2:].any(-1) &
-      (self.rear_contact_age<self.cfg.recent_rear_seconds).all(-1) &
-      (self.fr_error.norm(dim=-1)<self.cfg.handoff_fr_error) & (data.joint_vel[:,self.joint_ids].norm(dim=-1)<20.))
+    return {
+      'orientation':orientation<torch.pi/12.,
+      'height_error':(data.root_link_pos_w[:,2]-origins[:,2]-ref['height']).abs()<.08,
+      'base_height':data.root_link_pos_w[:,2]-origins[:,2]>.44,
+      'upright':(gravity[:,0]<-.8)&(gravity[:,2].abs()<.35),
+      'angular_speed':data.root_link_ang_vel_b.norm(dim=-1)<2.,
+      'linear_speed':data.root_link_lin_vel_w.norm(dim=-1)<self.cfg.handoff_linear_speed,
+      'front_clear':~self.contacts[:,:2].any(-1),
+      'rear_support':self.contacts[:,2:].any(-1),
+      'recent_rears':(self.rear_contact_age<self.cfg.recent_rear_seconds).all(-1),
+      'fr_error':self.fr_error.norm(dim=-1)<self.cfg.handoff_fr_error,
+      'joint_speed':data.joint_vel[:,self.joint_ids].norm(dim=-1)<20.,
+    }
+
+  def _biped_candidate(self):
+    return torch.stack(tuple(self.biped_conditions().values()),dim=-1).all(-1)
 
   def advance(self):
     """Observe post-physics state once before termination/reward/reset."""

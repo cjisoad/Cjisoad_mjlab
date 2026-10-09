@@ -146,14 +146,39 @@ def parse_args(argv=None):
                       help='FR control region; defaults to quadruped or biped according to task')
   parser.add_argument('--reachability-cache', type=Path,
                       help='Precomputed continuous FR boundary for quadruped keyboard mode')
+  transitions = parser.add_mutually_exclusive_group()
+  transitions.add_argument('--bridge-checkpoint-file',type=Path,
+                      help='Rise actor84 checkpoint for loco+union automatic transitions')
+  transitions.add_argument('--transition-checkpoint-file',type=Path,
+                      help='BeyondMimic transition_t actor75 checkpoint for loco+union transitions')
+  parser.add_argument('--biped-checkpoint-file',type=Path,
+                      help='Standing teacher checkpoint for loco+union automatic transitions')
+  parser.add_argument('--transition-margin',type=float,default=.02,
+                      help='Trigger below the tripod0.35m ceiling by this margin (default0.02m)')
+  parser.add_argument('--allow-legacy-transition-limiter', action='store_true',
+                      help='Explicit simulation test of an old unlimited transition policy under new target limits')
   args = parser.parse_args(argv)
   if args.num_envs < 1:
     parser.error('--num-envs must be positive')
+  if not math.isfinite(args.transition_margin) or not 0.<args.transition_margin<.10:
+    parser.error('--transition-margin must be between0 and0.10m')
+  if (args.bridge_checkpoint_file or args.transition_checkpoint_file or args.biped_checkpoint_file) and not (
+      args.task=='loco_pedipulation_t' and args.workspace=='union'):
+    parser.error('Three-teacher checkpoints require loco_pedipulation_t --workspace union')
+  if args.allow_legacy_transition_limiter and not args.transition_checkpoint_file:
+    parser.error('--allow-legacy-transition-limiter requires --transition-checkpoint-file')
   return args
 
 
 def main():
   args = parse_args()
+  if args.task=='loco_pedipulation_t' and args.workspace=='union':
+    if args.transition_checkpoint_file:
+      from keyboard_transition_fsm import run
+    else:
+      from keyboard_teacher_fsm import run
+    run(args)
+    return
   checkpoint = args.checkpoint_file.expanduser().resolve()
   if not checkpoint.is_file():
     raise FileNotFoundError(f'Checkpoint not found: {checkpoint}')

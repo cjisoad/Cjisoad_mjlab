@@ -131,9 +131,7 @@ class TransitionCommand(MotionCommand):
   def anchor_ang_vel_w(self):
     return self.body_ang_vel_w[:, self.motion_anchor_body_index]
 
-  def _resample_command(self, env_ids):
-    if len(env_ids) == 0:
-      return
+  def _sample_reference_frames(self, env_ids):
     if self.cfg.sampling_mode == 'start':
       self.time_steps[env_ids] = 0
     else:
@@ -143,6 +141,11 @@ class TransitionCommand(MotionCommand):
         self._adaptive_sampling(env_ids)
       first = torch.rand(len(env_ids), device=self.device) < self.cfg.first_frame_probability
       self.time_steps[env_ids[first]] = 0
+
+  def _resample_command(self, env_ids):
+    if len(env_ids) == 0:
+      return
+    self._sample_reference_frames(env_ids)
     self.completed[env_ids] = False
     self.reset_age_steps[env_ids] = 0
     self._reset_step[env_ids] = getattr(self._env, 'common_step_counter', 0)

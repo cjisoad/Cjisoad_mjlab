@@ -13,6 +13,11 @@ from .commands import TRACKED_BODY_NAMES, TransitionCommandCfg
 from . import terminations
 
 
+# Support-leg command dynamics stay unchanged for the frozen endpoint teachers.
+TRANSITION_TARGET_VELOCITY_LIMITS = (None,)*3+(2.,)*3+(None,)*6
+TRANSITION_TARGET_ACCELERATION_LIMITS = (None,)*3+(30.,)*3+(None,)*6
+
+
 def _ground_sensor(name, bodies):
   return ContactSensorCfg(name=name,
     primary=ContactMatch(mode='body', pattern=bodies, entity='robot'),
@@ -38,7 +43,10 @@ def transition_env_cfg(play=False):
     _ground_sensor('feet_ground_contact', tuple(f'{leg}_foot' for leg in ('FL','FR','RL','RR'))),
     _ground_sensor('base_ground_contact', ('base_link','Head_upper','Head_lower')),
   )
-  cfg.actions = {'joint_pos': PedipulationPositionActionCfg(entity_name='robot', scale=.25, delay=False)}
+  cfg.actions = {'joint_pos': PedipulationPositionActionCfg(
+    entity_name='robot', scale=.25, delay=False,
+    target_velocity_limits=TRANSITION_TARGET_VELOCITY_LIMITS,
+    target_acceleration_limits=TRANSITION_TARGET_ACCELERATION_LIMITS)}
   cfg.commands = {'motion': TransitionCommandCfg(
     pose_range=dict(x=(-.02,.02), y=(-.02,.02), z=(-.01,.01),
                     roll=(-.08,.08), pitch=(-.08,.08), yaw=(-.15,.15)),
