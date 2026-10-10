@@ -92,7 +92,7 @@ def train(args):
       write_json(output/f'evaluation_{step:06d}_{phase}_level{level}.json', report)
       print('ENTRY_EVALUATION '+json.dumps({k: report[k] for k in
         ('updates_completed', 'phase', 'level', 'attempts', 'distinct_trajectories',
-         'successes', 'strict_successes')}, allow_nan=False), flush=True)
+         'successes')}, allow_nan=False), flush=True)
       return report
 
     initial_levels = range(len(LEVELS)) if args.baseline == 'all' else ([term.course.level] if args.baseline == 'current' else [])

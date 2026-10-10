@@ -12,7 +12,7 @@ import torch
 
 from .entry_bank import ERROR_EDGES, LEVELS, SPEED_EDGES
 from .standing import (STANDING_HOLD_SECONDS, advance_standing_hold, standing_hold_policy,
-  endpoint_metrics, standing_conditions, strict_endpoint_candidate)
+  endpoint_metrics, standing_conditions)
 
 
 def json_safe(value):
@@ -53,10 +53,8 @@ class EntryTrials:
     self.elapsed = torch.zeros(count, dtype=torch.float64, device=device)
     self.standing_duration = torch.zeros_like(self.elapsed)
     self.standing_bad_samples = torch.zeros(count, dtype=torch.long, device=device)
-    self.strict_duration = torch.zeros_like(self.elapsed)
     self.completed = torch.zeros(count, dtype=torch.bool, device=device)
     self.standing_held = torch.zeros_like(self.completed)
-    self.strict_held = torch.zeros_like(self.completed)
     self.finished = torch.zeros_like(self.completed)
     self.reasons = [None] * count
     self.termination_reasons = [[] for _ in range(count)]
@@ -70,15 +68,11 @@ class EntryTrials:
     alive = active & ~failed
     self.completed |= completed & alive
     standing = completed & alive & torch.stack(tuple(standing_conditions(metrics).values()), -1).all(-1)
-    strict = alive & strict_endpoint_candidate(completed, metrics)
     duration, bad_samples = advance_standing_hold(self.standing_duration, self.standing_bad_samples,
       standing, eligible=completed & alive, active=active, dt=self.dt)
     self.standing_duration.copy_(duration)
     self.standing_bad_samples.copy_(bad_samples)
-    self.strict_duration[:] = torch.where(active,
-      torch.where(strict, self.strict_duration+self.dt, 0.), self.strict_duration)
     self.standing_held |= standing & (self.standing_duration >= STANDING_HOLD_SECONDS-1e-9)
-    self.strict_held |= strict & (self.strict_duration >= 1.-1e-9)
     timed_out = active & (truncated | (self.elapsed >= self.timeout_s-1e-9))
     ending = failed | (active & self.standing_held) | timed_out
     # Own the tensors: the environment can overwrite both state and done buffers.
@@ -104,12 +98,12 @@ class EntryTrials:
     values = {name: value.detach().cpu().tolist() for name, value in self._metrics.items()}
     elapsed = self.elapsed.cpu().tolist()
     completed = self.completed.cpu().tolist()
-    standing, strict = self.standing_held.cpu().tolist(), self.strict_held.cpu().tolist()
-    standing_duration, strict_duration = self.standing_duration.cpu().tolist(), self.strict_duration.cpu().tolist()
+    standing = self.standing_held.cpu().tolist()
+    standing_duration = self.standing_duration.cpu().tolist()
     bad_samples = self.standing_bad_samples.cpu().tolist()
-    return json_safe([dict(completed=completed[i], standing_held=standing[i], strict_held=strict[i],
+    return json_safe([dict(completed=completed[i], standing_held=standing[i],
       time=elapsed[i], reason=self.reasons[i], termination_reasons=list(self.termination_reasons[i]),
-      standing_hold_s=standing_duration[i], standing_bad_samples=bad_samples[i], strict_hold_s=strict_duration[i],
+      standing_hold_s=standing_duration[i], standing_bad_samples=bad_samples[i],
       endpoint_metrics={name: value[i] for name, value in values.items()})
       for i in range(len(self.reasons))])
 
@@ -117,11 +111,10 @@ class EntryTrials:
 def _summary(records):
   count = len(records)
   successes = sum(record['standing_held'] for record in records)
-  strict = sum(record['strict_held'] for record in records)
   completed = sum(record['completed'] for record in records)
-  return dict(attempts=count, successes=successes, strict_successes=strict,
+  return dict(attempts=count, successes=successes,
     full_motion_completions=completed, success_rate=successes/count if count else 0.,
-    strict_success_rate=strict/count if count else 0., full_motion_completion_rate=completed/count if count else 0.,
+    full_motion_completion_rate=completed/count if count else 0.,
     failure_reasons=dict(Counter(record['reason'] for record in records if not record['standing_held'])))
 
 
@@ -228,9 +221,11 @@ def evaluate_entries(actor, bank_file, *, level: int, device: str, attempts: int
       records = trials.records()
       for i, record in enumerate(records):
         record.update(entry_index=indices[i], **{name: values[i] for name, values in bank_rows.items()})
+      report_hold_policy = standing_hold_policy()
+      report_hold_policy.pop('strict_endpoint', None)
       return json_safe(dict(evaluation='standing_eligibility', teacher_chain_success_evaluated=False,
         split='holdout', level=level, seed=seed, timeout_s=10., hold_s=1.,
-        standing_hold_policy=standing_hold_policy(),
+        standing_hold_policy=report_hold_policy,
         distinct_trajectories=len(set(bank_rows['trajectory_id'])),
         distinct_states=len(set(indices)),
         promotion_evidence_sufficient=len(set(bank_rows['trajectory_id'])) >= 64,

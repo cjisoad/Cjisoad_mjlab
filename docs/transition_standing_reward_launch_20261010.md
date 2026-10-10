@@ -86,11 +86,11 @@ length 476.33 steps. GPU: 4,042 MiB and 59% utilization. Both processes alive.
 | 1250 | 52/64 | 39/64 |
 
 Course remains 0. Latest 25 failures: 12 foot-height tracking failures and 13
-standing-hold timeouts. Strict endpoint successes remain 0/64. These early
-results do not establish a reliable improvement; holding reward is active and
-formal training is progressing. Existing repeatability variation in simulation
-standing outcomes remains unresolved. Evaluation measures handoff eligibility,
-not execution of the complete biped-teacher continuation.
+standing-hold timeouts. These early results do not establish a reliable
+improvement; holding reward is active and formal training is progressing.
+Existing repeatability variation in simulation standing outcomes remains
+unresolved. Evaluation measures handoff eligibility, not execution of the
+complete biped-teacher continuation.
 
 Local artifacts: `outputs/transition_standing_reward_20261009/` contains test,
 CPU/GPU smoke, deployment, launch, recipe, checkpoint and curriculum verification
