@@ -24,3 +24,32 @@
 部署目录：`/pedipulation/legmanip1/transition_down_20261010/repo`。`run_transition_down_remote.sh`先验证源码/数据SHA和环境版本，运行8环境GPU名义及入口smoke，再名义从头4096环境30001更新、保存每100更新；之后反向名义模型warm start入口10000更新，每250更新64独立留出评估，完成后进行四组100回合、增强、四档入口和128独立老师链路评估及视频。运行阶段、PID、日志、退出码与最终模型SHA均记录于新运行目录。
 
 正式训练完成及性能结果以远端运行日志、模型和独立评估为准；本地通过不表示已学会完整下降或三足接管。
+
+2026-10-10 远端启动核验：实现提交为 `ad8cd9a`，合入远端并发提交后的训练源码为 `4f6120a1c05bfdc13cb323aee9d9a9ba74dcd659`，已推送到 `origin/wsl-validation`。合并后的反向测试再次执行，33 passed、7 subtests passed。
+
+初次远端流水线因容器缺少 `libEGL.so.1` 在 GPU smoke 前退出，尚未训练。安装 `libegl1`、`libopengl0` 后，MuJoCo EGL 导入和 CUDA 验证通过，使用全新运行目录重启；没有改变数据、算法或随机化。
+
+当前运行目录为 `/pedipulation/legmanip1/transition_down_20261010/run_gpu01`，tmux 会话为 `transition_down_20261010`。627 个部署文件 SHA 校验全部通过。GPU 名义 smoke 的两次 PPO 更新、有限观测/奖励、参数更新、模型 round trip 和动作契约拒绝通过；GPU 入口 smoke 的 warm start、fresh optimizer、严格 resume、学习率/课程恢复、改变目标拒绝通过，另运行32条独立零策略入口用于检查评估执行。
+
+名义训练进程于北京时间 `2026-10-10 15:27:57` 启动，PID `15046`，流水线 PID `14589`。北京时间 `15:32:31` 的核验快照已记录到第153次更新，所检查的损失、学习率、动作标准差、奖励和回合长度历史均为有限值；`model_100.pt` 已按100次间隔保存，actor/critic 状态均为有限值，较第0次检查点发生变化。该检查点 SHA 为 `100b0ab3adff31e71e635bfdf07fa0664d85fff3ee9453b98cf8890125460d9f`。这是启动核验，最终成功率尚待训练后的独立评估。
+
+启动证据保存在本地 `outputs/transition_down_validation_20261010/remote_start_verification.json` 与远端 `run_gpu01/start_verification.json`，包含设备、版本、PID、源码版本、部署清单 SHA、GPU smoke 结果、学习指标和检查点 SHA。远端持久存储中的文本日志在核验时尚未显示内容，实时推进已通过 TensorBoard event 文件确认；监控时同时检查 event 文件和周期检查点。
+
+流水线将自动依次执行名义30001次更新、名义评估、入口10000次更新以及最终评估和视频记录。预计最终文件为：
+
+- 名义：`/pedipulation/legmanip1/transition_down_20261010/repo/logs/rsl_rl/transition_down_t/run_gpu01_nominal/model_30000.pt`。
+- 入口：`/pedipulation/legmanip1/transition_down_20261010/repo/logs/rsl_rl/transition_down_t_entry/run_gpu01_entry/model_9999.pt`。
+- 评估与视频：`/pedipulation/legmanip1/transition_down_20261010/run_gpu01/`；`stage` 表示阶段，`exit_code` 出现表示流水线已退出。
+
+SSH 进入后可用以下只读命令检查最新训练指标；第一阶段完成后将目录改为上述入口日志目录：
+
+```bash
+/opt/conda/bin/python - <<'PY'
+from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+path = '/pedipulation/legmanip1/transition_down_20261010/repo/logs/rsl_rl/transition_down_t/run_gpu01_nominal'
+events = EventAccumulator(path).Reload()
+for tag in ('Loss/value', 'Loss/surrogate', 'Train/mean_reward', 'Train/mean_episode_length'):
+    value = events.Scalars(tag)[-1]
+    print(tag, 'iteration=', value.step, 'value=', value.value)
+PY
+```
