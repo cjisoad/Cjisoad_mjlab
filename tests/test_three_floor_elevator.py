@@ -1,0 +1,295 @@
+from pathlib import Path
+
+import mujoco
+import pytest
+
+from simulate.mujoco.model.three_floor_elevator.controller import ThreeFloorElevatorController
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SCENE = ROOT / "simulate/mujoco/model/three_floor_elevator/three_floor_elevator.xml"
+
+
+def _object_id(model, object_type, name):
+    object_id = mujoco.mj_name2id(model, object_type, name)
+    assert object_id >= 0, f"missing {object_type.name}: {name}"
+    return object_id
+
+
+def test_scene_compiles_and_has_fixed_overview_camera():
+    model = mujoco.MjModel.from_xml_path(str(SCENE))
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+
+    _object_id(model, mujoco.mjtObj.mjOBJ_CAMERA, "front_overview")
+    assert model.nbody > 1
+    assert model.nbody < 200
+    assert model.nu < 20
+
+
+def test_scene_exposes_three_floors_lights_and_button_groups():
+    model = mujoco.MjModel.from_xml_path(str(SCENE))
+
+    for floor in (1, 2, 3):
+        _object_id(model, mujoco.mjtObj.mjOBJ_BODY, f"room_f{floor}")
+        _object_id(model, mujoco.mjtObj.mjOBJ_LIGHT, f"lamp_f{floor}")
+        _object_id(model, mujoco.mjtObj.mjOBJ_JOINT, f"joint_light_f{floor}")
+        _object_id(model, mujoco.mjtObj.mjOBJ_JOINT, f"joint_cab_f{floor}")
+
+    for name in (
+        "joint_call_up_f1",
+        "joint_call_up_f2",
+        "joint_call_down_f2",
+        "joint_call_down_f3",
+        "lift_z",
+    ):
+        _object_id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
+
+    for floor in (1, 2, 3):
+        _object_id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, f"gate_f{floor}")
+        _object_id(model, mujoco.mjtObj.mjOBJ_GEOM, f"geom_gate_f{floor}")
+
+    assert model.nlight >= 3
+    assert model.nbody < 200
+
+
+def test_scene_starts_lights_on_and_lift_at_floor_three_with_only_top_gate_open():
+    model = mujoco.MjModel.from_xml_path(str(SCENE))
+    data = mujoco.MjData(model)
+    lift_joint = _object_id(model, mujoco.mjtObj.mjOBJ_JOINT, "lift_z")
+    lift_qpos = model.jnt_qposadr[lift_joint]
+    assert data.qpos[lift_qpos] == pytest.approx(5.6)
+
+    for floor in (1, 2, 3):
+        lamp_id = _object_id(model, mujoco.mjtObj.mjOBJ_LIGHT, f"lamp_f{floor}")
+        assert model.light_active[lamp_id]
+
+    for floor, target in ((1, 0.0), (2, 0.0), (3, 1.8)):
+        gate_joint = _object_id(model, mujoco.mjtObj.mjOBJ_JOINT, f"joint_gate_f{floor}")
+        gate_qpos = model.jnt_qposadr[gate_joint]
+        assert data.qpos[gate_qpos] == pytest.approx(target)
+
+
+@pytest.fixture
+def scene():
+    model = mujoco.MjModel.from_xml_path(str(SCENE))
+    data = mujoco.MjData(model)
+    controller = ThreeFloorElevatorController(model, data)
+    controller.reset()
+    return model, data, controller
+
+
+def _set_joint_position(model, data, joint_name, position):
+    joint_id = _object_id(model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
+    data.qpos[model.jnt_qposadr[joint_id]] = position
+
+
+def _joint_position(model, data, joint_name):
+    joint_id = _object_id(model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
+    return data.qpos[model.jnt_qposadr[joint_id]]
+
+
+def test_controller_reset_restores_lights_lift_and_landing_gates(scene):
+    model, data, controller = scene
+    assert controller.current_floor == 3
+    assert not controller.motion_active
+    assert controller.pending_floors == ()
+    for floor, expected in ((1, 0.0), (2, 0.0), (3, 1.8)):
+        assert _joint_position(model, data, f"joint_gate_f{floor}") == pytest.approx(expected)
+        lamp_id = _object_id(model, mujoco.mjtObj.mjOBJ_LIGHT, f"lamp_f{floor}")
+        assert model.light_active[lamp_id]
+    assert _joint_position(model, data, "lift_z") == pytest.approx(5.6)
+
+
+def test_idle_lift_holds_its_floor_against_gravity(scene):
+    model, data, controller = scene
+    for _ in range(1000):
+        controller.apply_mouse_forces()
+        mujoco.mj_step(model, data)
+        controller.update()
+
+    assert _joint_position(model, data, "lift_z") == pytest.approx(5.6, abs=0.02)
+
+
+def test_light_button_toggles_its_lamp_once_until_released(scene):
+    model, data, controller = scene
+    lamp1 = _object_id(model, mujoco.mjtObj.mjOBJ_LIGHT, "lamp_f1")
+    lamp2 = _object_id(model, mujoco.mjtObj.mjOBJ_LIGHT, "lamp_f2")
+
+    _set_joint_position(model, data, "joint_light_f1", 0.020)
+    controller.update()
+    controller.update()
+    assert not model.light_active[lamp1]
+    assert model.light_active[lamp2]
+
+    _set_joint_position(model, data, "joint_light_f1", 0.0)
+    controller.update()
+    data.time = 0.5
+    _set_joint_position(model, data, "joint_light_f1", 0.020)
+    controller.update()
+    assert model.light_active[lamp1]
+
+
+def test_call_button_starts_a_rate_limited_trip_and_closes_open_gate(scene):
+    model, data, controller = scene
+    lift_actuator = _object_id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "lift_position")
+    gate3_actuator = _object_id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "gate_f3")
+
+    _set_joint_position(model, data, "joint_call_up_f1", 0.020)
+    controller.update()
+
+    assert controller.current_target == 1
+    assert controller.motion_active
+    assert controller.doors_closing
+    assert data.ctrl[lift_actuator] == pytest.approx(5.6)
+    assert data.ctrl[gate3_actuator] == pytest.approx(0.0)
+    assert _joint_position(model, data, "joint_gate_f3") == pytest.approx(1.8)
+
+    for _ in range(100):
+        mujoco.mj_step(model, data)
+        controller.update()
+        assert data.ctrl[lift_actuator] == pytest.approx(5.6)
+
+
+def test_floor_requests_are_deduplicated_and_served_in_order(scene):
+    _, _, controller = scene
+    controller.request_floor(1)
+    controller.request_floor(2)
+    controller.request_floor(1)
+    assert controller.pending_floors == (1, 2)
+
+
+def test_elevator_reaches_requested_floor_and_opens_only_that_gate(scene):
+    model, data, controller = scene
+    controller.request_floor(1)
+
+    for _ in range(6500):
+        controller.apply_mouse_forces()
+        mujoco.mj_step(model, data)
+        controller.update()
+        if controller.current_floor == 1 and not controller.motion_active:
+            break
+
+    assert controller.current_floor == 1
+    assert _joint_position(model, data, "lift_z") == pytest.approx(0.0, abs=0.02)
+    for _ in range(2500):
+        mujoco.mj_step(model, data)
+        controller.update()
+        if (
+            _joint_position(model, data, "joint_gate_f1") > 1.7
+            and _joint_position(model, data, "joint_gate_f3") < 0.02
+        ):
+            break
+    assert _joint_position(model, data, "joint_gate_f1") > 1.7
+    assert _joint_position(model, data, "joint_gate_f2") < 0.02
+    assert _joint_position(model, data, "joint_gate_f3") < 0.02
+
+
+def _scene_with_test_pusher():
+    spec = mujoco.MjSpec.from_file(str(SCENE))
+    pusher = spec.worldbody.add_body(name="test_pusher", pos=(-2.20, 1.35, 1.12))
+    pusher.add_joint(name="test_pusher_free", type=mujoco.mjtJoint.mjJNT_FREE)
+    pusher.add_geom(
+        name="test_pusher_geom",
+        type=mujoco.mjtGeom.mjGEOM_SPHERE,
+        size=(0.05,),
+        mass=0.5,
+        friction=(1.0, 0.005, 0.0001),
+    )
+    model = spec.compile()
+    data = mujoco.MjData(model)
+    controller = ThreeFloorElevatorController(model, data)
+    controller.reset()
+    return model, data, controller
+
+
+def test_physical_contact_depresses_the_same_light_button():
+    model, data, controller = _scene_with_test_pusher()
+    lamp_id = _object_id(model, mujoco.mjtObj.mjOBJ_LIGHT, "lamp_f1")
+    pusher_id = _object_id(model, mujoco.mjtObj.mjOBJ_BODY, "test_pusher")
+    max_button_position = 0.0
+
+    for _ in range(1000):
+        data.xfrc_applied[pusher_id, 1] = 25.0
+        mujoco.mj_step(model, data)
+        max_button_position = max(max_button_position, _joint_position(model, data, "joint_light_f1"))
+        controller.update()
+        if not model.light_active[lamp_id]:
+            break
+
+    assert max_button_position > controller.PRESS_THRESHOLD
+    assert not model.light_active[lamp_id]
+
+
+def test_mouse_press_uses_the_same_physical_button_and_event_path(scene):
+    model, data, controller = scene
+    lamp_id = _object_id(model, mujoco.mjtObj.mjOBJ_LIGHT, "lamp_f1")
+    button_qpos = _object_id(model, mujoco.mjtObj.mjOBJ_JOINT, "joint_light_f1")
+    qpos_address = model.jnt_qposadr[button_qpos]
+    max_button_position = 0.0
+    controller.mouse_press("light_f1")
+
+    for _ in range(100):
+        controller.apply_mouse_forces()
+        mujoco.mj_step(model, data)
+        max_button_position = max(max_button_position, float(data.qpos[qpos_address]))
+        controller.update()
+        if not model.light_active[lamp_id]:
+            break
+
+    assert max_button_position > controller.PRESS_THRESHOLD
+    assert not model.light_active[lamp_id]
+
+
+def test_robot_side_contact_can_press_the_first_floor_elevator_call():
+    spec = mujoco.MjSpec.from_file(str(SCENE))
+    pusher = spec.worldbody.add_body(name="call_test_pusher", pos=(2.62, -0.95, 1.1))
+    pusher.add_joint(name="call_test_pusher_free", type=mujoco.mjtJoint.mjJNT_FREE)
+    pusher.add_geom(
+        name="call_test_pusher_geom",
+        type=mujoco.mjtGeom.mjGEOM_SPHERE,
+        size=(0.05,),
+        mass=0.5,
+        friction=(1.0, 0.005, 0.0001),
+    )
+    model = spec.compile()
+    data = mujoco.MjData(model)
+    controller = ThreeFloorElevatorController(model, data)
+    controller.reset()
+    pusher_id = _object_id(model, mujoco.mjtObj.mjOBJ_BODY, "call_test_pusher")
+    max_button_position = 0.0
+
+    for _ in range(1000):
+        data.xfrc_applied[pusher_id, 0] = 25.0
+        mujoco.mj_step(model, data)
+        max_button_position = max(max_button_position, _joint_position(model, data, "joint_call_up_f1"))
+        controller.update()
+        if controller.current_target == 1 and controller.motion_active:
+            break
+
+    assert max_button_position > controller.PRESS_THRESHOLD
+    assert controller.current_target == 1
+    assert controller.motion_active
+
+
+def test_mouse_picker_maps_selected_button_geom_to_its_logical_name(scene, monkeypatch):
+    from simulate.mujoco.model.three_floor_elevator.viewer import pick_button
+
+    model, data, _ = scene
+    scene_stub = object()
+    option = object()
+    selected_geom = _object_id(model, mujoco.mjtObj.mjOBJ_GEOM, "geom_cab_f2")
+
+    def select(_model, _data, _option, _aspect, _relx, _rely, _scene, _point, geomid, _flexid, _skinid):
+        geomid[0] = selected_geom
+        return 1
+
+    monkeypatch.setattr(mujoco, "mjv_select", select)
+    assert pick_button(model, data, scene_stub, option, 16 / 9, 0.5, 0.5) == "cab_f2"
+
+    def select_nothing(_model, _data, _option, _aspect, _relx, _rely, _scene, _point, geomid, _flexid, _skinid):
+        geomid[0] = -1
+        return -1
+
+    monkeypatch.setattr(mujoco, "mjv_select", select_nothing)
+    assert pick_button(model, data, scene_stub, option, 16 / 9, 0.95, 0.05) is None
