@@ -194,16 +194,15 @@ class KeyboardTransitionTests(unittest.TestCase):
       {'actor_dim': 51, 'default_angles': list(BIPED_DEFAULT_ANGLES)}, torch.tensor([0]))[:, 36:48].max() > 10
 
 
-  def test_world_feet_drift_is_distinct_from_standing_handoff(self):
+  def test_world_foot_motion_is_diagnostic_but_root_drift_is_not(self):
     module = backend()
     metrics = {name: torch.tensor([value]) for name, value in dict(
-      orientation_error=.03, height_error=.008, feet_rms=.144,
-      linear_speed=.07, angular_speed=.09, rear_supported=True, front_clear=True,
-      joint_speed=1.).items()}
-    gates = module.standing_conditions(metrics)
-    assert torch.stack(tuple(gates.values())).all()
-    assert not module.strict_endpoint_candidate(torch.tensor([True]), metrics).any()
-
+      orientation_error=.03, height_error=.008, xy_error=.01, feet_rms=.144,
+      linear_speed=.6, angular_speed=1.2, rear_supported=False, front_clear=False,
+      joint_speed=25.).items()}
+    self.assertTrue(torch.stack(tuple(module.standing_conditions(metrics).values())).all())
+    metrics['xy_error'][:] = .09
+    self.assertFalse(torch.stack(tuple(module.standing_conditions(metrics).values())).all())
 
   def test_transition_timeout_does_not_force_biped_handoff(self):
     world = self.world()
@@ -230,7 +229,7 @@ class KeyboardTransitionTests(unittest.TestCase):
     term.advance()
     assert term.keyboard_timed_out[0]
 
-  def test_keyboard_tolerates_two_bad_samples_without_credit_or_early_handoff(self):
+  def test_keyboard_handoff_allows_stepping_and_caches_same_step(self):
     module = backend()
     world = self.world(); world.reset(seed=42)
     term = world.command_manager.get_term('twist')
@@ -239,27 +238,19 @@ class KeyboardTransitionTests(unittest.TestCase):
     motion.time_steps[0] = motion.motion.time_step_total-1
     term.candidate_elapsed[0] = .96
     metrics = {name: torch.tensor([value, value]) for name, value in dict(
-      orientation_error=.03, height_error=.008, feet_rms=.02,
-      linear_speed=.07, angular_speed=.09, rear_supported=True, front_clear=True,
-      joint_speed=1.).items()}
-    metrics['rear_supported'][0] = False
+      orientation_error=.03, height_error=.008, xy_error=.01, feet_rms=.02,
+      linear_speed=.6, angular_speed=1.2, rear_supported=False, front_clear=False,
+      joint_speed=25.).items()}
     with patch.object(module, 'endpoint_metrics', return_value=metrics):
-      for count in (1, 2):
-        world.common_step_counter += 1; term.advance()
-        self.assertAlmostEqual(float(term.candidate_elapsed[0]), .96, places=6)
-        self.assertEqual(int(term.candidate_bad_samples[0]), count)
-        self.assertEqual(int(term.owner[0]), module.TRANSITION)
-        term.advance()
-        self.assertEqual(int(term.candidate_bad_samples[0]), count)
-      metrics['rear_supported'][0] = True
       world.common_step_counter += 1; term.advance()
       self.assertAlmostEqual(float(term.candidate_elapsed[0]), .98, places=6)
-      self.assertEqual(int(term.candidate_bad_samples[0]), 0)
       self.assertEqual(int(term.owner[0]), module.TRANSITION)
+      term.advance()
+      self.assertAlmostEqual(float(term.candidate_elapsed[0]), .98, places=6)
       world.common_step_counter += 1; term.advance()
       self.assertEqual(int(term.owner[0]), module.BIPED)
 
-  def test_keyboard_third_bad_sample_resets_and_partial_reset_is_local(self):
+  def test_keyboard_position_violation_resets_and_partial_reset_is_local(self):
     module = backend()
     world = self.world(); world.reset(seed=42)
     term = world.command_manager.get_term('twist')
@@ -268,19 +259,17 @@ class KeyboardTransitionTests(unittest.TestCase):
     motion.time_steps[:] = motion.motion.time_step_total-1
     term.candidate_elapsed[:] = .5
     metrics = {name: torch.tensor([value, value]) for name, value in dict(
-      orientation_error=.03, height_error=.008, feet_rms=.02,
+      orientation_error=.03, height_error=.008, xy_error=.01, feet_rms=.02,
       linear_speed=.07, angular_speed=.09, rear_supported=False, front_clear=True,
       joint_speed=1.).items()}
     with patch.object(module, 'endpoint_metrics', return_value=metrics):
-      for _ in range(2):
-        world.common_step_counter += 1; term.advance()
       term.reset(torch.tensor([1]))
-      self.assertEqual(int(term.candidate_bad_samples[1]), 0)
+      world.common_step_counter += 1; term.advance()
       self.assertEqual(float(term.candidate_elapsed[1]), 0.)
-      self.assertEqual(int(term.candidate_bad_samples[0]), 2)
+      self.assertAlmostEqual(float(term.candidate_elapsed[0]), .52)
+      metrics['xy_error'][0] = .09
       world.common_step_counter += 1; term.advance()
       self.assertEqual(float(term.candidate_elapsed[0]), 0.)
-      self.assertEqual(int(term.candidate_bad_samples[0]), 3)
 
   def test_keyboard_physical_failure_cannot_be_debounced_into_handoff(self):
     module = backend()
@@ -291,7 +280,7 @@ class KeyboardTransitionTests(unittest.TestCase):
     motion.time_steps[0] = motion.motion.time_step_total-1
     term.candidate_elapsed[0] = .98
     metrics = {name: torch.tensor([value, value]) for name, value in dict(
-      orientation_error=.03, height_error=.008, feet_rms=.02,
+      orientation_error=.03, height_error=.008, xy_error=.01, feet_rms=.02,
       linear_speed=.07, angular_speed=.09, rear_supported=True, front_clear=True,
       joint_speed=1.).items()}
     with patch.object(module, 'endpoint_metrics', return_value=metrics), \

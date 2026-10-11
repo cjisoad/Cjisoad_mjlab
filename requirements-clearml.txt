@@ -1,0 +1,3 @@
+# Optional for scripts/train_transition_entry.py --clearml.
+# Runtime API credentials belong in clearml.conf / CLEARML_* environment.
+clearml==2.1.12

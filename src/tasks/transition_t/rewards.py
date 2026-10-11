@@ -1,7 +1,7 @@
-"""Small terminal shaping reward for sustained standing after the rise."""
+"""Smooth terminal position reward, allowing in-place balance steps."""
 import torch
 
-from .standing import (STANDING_HOLD_SECONDS, advance_standing_hold,
+from .standing import (POSITION_RADIUS, advance_standing_hold,
   endpoint_metrics, standing_conditions)
 from . import terminations
 
@@ -38,7 +38,9 @@ class SustainedStandingReward:
       eligible=eligible, active=active, dt=env.step_dt)
     self.duration.copy_(duration)
     self.bad_samples.copy_(bad)
-    raw = torch.where(good, .2+.8*(duration/STANDING_HOLD_SECONDS).clamp(max=1.), 0.)
+    upright = eligible & (metrics['orientation_error'] < .25) & (metrics['height_error'] < .05)
+    # No contact gate or timer ramp: balancing steps keep earning credit.
+    raw = torch.where(upright, torch.exp(-(metrics['xy_error']/POSITION_RADIUS).square()), 0.)
     self.value[active] = raw[active].to(self.value.dtype)
     self.last_step[active] = env.common_step_counter
     return self.value

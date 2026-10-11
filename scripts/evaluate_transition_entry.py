@@ -3,6 +3,7 @@ import argparse
 from dataclasses import asdict
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -14,16 +15,28 @@ def parse_args(argv=None):
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument('--entry-bank', type=Path, required=True)
   parser.add_argument('--checkpoint', type=Path, required=True)
+  parser.add_argument('--motion-file', type=Path,
+    help='Reference used by this checkpoint; omitted keeps the original reference')
   parser.add_argument('--level', choices=('all', '0', '1', '2', '3'), default='all')
+  parser.add_argument('--curriculum', choices=('legacy','three-stage'), default='legacy')
+  parser.add_argument('--initialization', choices=('entries','nominal'), default='entries')
   parser.add_argument('--attempts', type=int, default=64)
   parser.add_argument('--device', default='cuda:0')
   parser.add_argument('--seed', type=int, default=424242)
+  parser.add_argument('--position-radius', type=float, default=.08,
+    help='Allowed endpoint XY error in meters; success needs 1 continuous second (default 0.08)')
   parser.add_argument('--allow-legacy-transition-limiter', action='store_true',
     help='Evaluate an old unlimited transition policy under new execution limits')
   parser.add_argument('--output', type=Path, default=ROOT/'outputs/transition_entries/evaluation.json')
   args = parser.parse_args(argv)
+  if args.curriculum == 'three-stage' and args.level == '3':
+    parser.error('three-stage levels are 0, 1, 2')
+  if args.curriculum == 'legacy' and args.initialization != 'entries':
+    parser.error('nominal evaluation requires --curriculum three-stage')
   if args.attempts < 1:
     parser.error('--attempts must be positive')
+  if not math.isfinite(args.position_radius) or args.position_radius <= 0:
+    parser.error('--position-radius must be finite and positive')
   return args
 
 
@@ -39,7 +52,9 @@ def evaluate(args):
   from src.tasks.transition_t.entry_bank import LEVELS
   from src.tasks.transition_t.entry_evaluation import evaluate_entries, _copy_actor_for_eval
   from src.tasks.transition_t.env_cfg import transition_env_cfg
+  from src.tasks.transition_t.three_stage import three_stage_env_cfg
   from src.tasks.transition_t.rl import TransitionOnPolicyRunner, transition_ppo_runner_cfg
+  from src.tasks.transition_t.three_stage import STAGES, V3_MOTION
 
   for path in (args.entry_bank, args.checkpoint):
     if not path.is_file():
@@ -47,7 +62,13 @@ def evaluate(args):
   if args.output.exists():
     raise ValueError(f'Use a fresh evaluation output: {args.output}')
   configure_torch_backends(); torch.set_num_threads(1)
-  cfg = transition_env_cfg(play=True)
+  level_for_cfg = int(args.level) if args.level != 'all' else 0
+  cfg = (three_stage_env_cfg(args.entry_bank, stage=level_for_cfg, num_envs=args.attempts,
+    motion_file=args.motion_file, nominal_evaluation=args.initialization == 'nominal', evaluation=True)
+    if args.curriculum == 'three-stage' else transition_env_cfg(play=True))
+  motion_file = args.motion_file or (V3_MOTION if args.curriculum == 'three-stage' else None)
+  if motion_file is not None:
+    cfg.commands['motion'].motion_file = str(motion_file.resolve())
   cfg.commands['motion'].debug_vis = False
   env = ManagerBasedRlEnv(cfg, device=args.device)
   try:
@@ -59,14 +80,16 @@ def evaluate(args):
     policy = _copy_actor_for_eval(runner.alg.actor, args.device)
   finally:
     env.close()
-  levels = range(len(LEVELS)) if args.level == 'all' else [int(args.level)]
+  levels = range(len(STAGES if args.curriculum == 'three-stage' else LEVELS)) if args.level == 'all' else [int(args.level)]
   report = dict(checkpoint=str(args.checkpoint.resolve()),
     legacy_limiter_experiment=args.allow_legacy_transition_limiter,
     checkpoint_sha256=hashlib.sha256(args.checkpoint.read_bytes()).hexdigest(), levels={})
   args.output.parent.mkdir(parents=True, exist_ok=True)
   for level in levels:
     result = evaluate_entries(policy, args.entry_bank, level=level, device=args.device,
-      attempts=args.attempts, seed=args.seed+level)
+      attempts=args.attempts, seed=args.seed+level, position_radius=args.position_radius,
+      motion_file=motion_file.resolve() if motion_file is not None else None,
+      curriculum=args.curriculum, initialization=args.initialization)
     report['levels'][str(level)] = result
     args.output.write_text(json.dumps(report, indent=2, allow_nan=False)+'\n')
     print('ENTRY_BASELINE '+json.dumps({key: result[key] for key in

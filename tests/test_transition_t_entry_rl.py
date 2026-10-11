@@ -57,10 +57,10 @@ class EntryRunnerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'recipe|bank'):runner.resume(path)
             parent.assert_not_called()
 
-  def test_recipe_records_three_sample_standing_policy(self):
+  def test_recipe_records_one_second_position_policy(self):
     recipe = self.runner()._entry_recipe()
-    self.assertEqual(recipe['promotion']['standing_hold']['bad_sample_limit'], 3)
-    self.assertEqual(recipe['promotion']['standing_hold']['bad_sample_credit'], 'pause')
+    self.assertEqual(recipe['promotion']['standing_hold']['bad_sample_limit'], 1)
+    self.assertEqual(recipe['promotion']['standing_hold']['bad_sample_credit'], 'reset')
 
   def test_resume_rejects_old_standing_evidence_before_loading_weights(self):
     runner = self.runner()

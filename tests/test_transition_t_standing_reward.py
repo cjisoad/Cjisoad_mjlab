@@ -1,4 +1,4 @@
-"""Holding reward credits good samples and tolerates short support interruptions."""
+"""Position shaping rewards balance steps and prevents drifting targets."""
 import importlib
 from types import SimpleNamespace
 import unittest
@@ -9,7 +9,7 @@ import torch
 
 def metrics(count=2):
   return {k: torch.full((count,), v) for k, v in dict(orientation_error=.1,
-    height_error=.01, feet_rms=.2, linear_speed=.1, angular_speed=.1,
+    height_error=.01, xy_error=0., feet_rms=.2, linear_speed=.1, angular_speed=.1,
     rear_supported=True, front_clear=True, joint_speed=1.).items()}
 
 
@@ -37,35 +37,30 @@ class StandingRewardTests(unittest.TestCase):
     for _ in range(60):self.assertEqual(float(self.step().sum()), 0.)
     self.assertEqual(float(self.reward.duration.sum()), 0.)
     self.motion.time_steps[:] = 350
-    self.assertAlmostEqual(float(self.step()[0]), .216, places=6)
+    self.assertAlmostEqual(float(self.step()[0]), 1., places=6)
 
-  def test_ramp_and_cap_with_world_foot_drift_allowed(self):
-    for _ in range(25):value = self.step()
-    self.assertAlmostEqual(float(value[0]), .6, places=6)
-    for _ in range(25):value = self.step()
-    self.assertAlmostEqual(float(value[0]), 1., places=6)
-    for _ in range(100):value = self.step()
-    self.assertAlmostEqual(float(value[0]), 1., places=6)
+  def test_no_ramp_with_world_foot_motion_allowed(self):
+    for _ in range(150):
+      self.assertAlmostEqual(float(self.step()[0]), 1., places=6)
 
-  def test_bad_samples_give_zero_pause_twice_then_reset(self):
-    for _ in range(25):self.step()
+  def test_stepping_keeps_reward_and_position_credit(self):
+    for _ in range(25): self.step()
     self.values['rear_supported'][0] = False
-    for i in (1, 2):
-      self.assertEqual(float(self.step()[0]), 0.)
-      self.assertAlmostEqual(float(self.reward.duration[0]), .5)
-      self.assertEqual(int(self.reward.bad_samples[0]), i)
-    self.step()
-    self.assertEqual(float(self.reward.duration[0]), 0.)
-    self.values['rear_supported'][0] = True
-    self.assertAlmostEqual(float(self.step()[0]), .216, places=6)
-
-  def test_recovery_preserves_time_and_clears_streak(self):
-    for _ in range(25):self.step()
-    self.values['rear_supported'][0] = False
-    self.step();self.step()
-    self.values['rear_supported'][0] = True
-    self.assertAlmostEqual(float(self.step()[0]), .616, places=6)
+    self.values['linear_speed'][0] = .6
+    for _ in range(25): self.assertEqual(float(self.step()[0]), 1.)
+    self.assertAlmostEqual(float(self.reward.duration[0]), 1.)
     self.assertEqual(int(self.reward.bad_samples[0]), 0)
+
+  def test_position_drift_has_smooth_reward_and_resets_acceptance_timer(self):
+    for _ in range(25): self.step()
+    self.values['xy_error'][0] = .08
+    self.assertAlmostEqual(float(self.step()[0]), float(torch.exp(torch.tensor(-1.))), places=6)
+    self.values['xy_error'][0] = .09
+    self.assertGreater(float(self.step()[0]), 0.)
+    self.assertEqual(float(self.reward.duration[0]), 0.)
+    self.values['xy_error'][0] = 0.
+    self.assertEqual(float(self.step()[0]), 1.)
+    self.assertAlmostEqual(float(self.reward.duration[0]), .02)
 
   def test_failure_and_nonfinite_clear_immediately(self):
     for kind in ('physical', 'terminated', 'nonfinite'):
@@ -113,7 +108,7 @@ class StandingRewardIntegrationTests(unittest.TestCase):
           env.reward_manager.compute(env.step_dt)
         rate=dict(env.reward_manager.get_active_iterable_terms(0))['standing_hold'][0]
         self.assertAlmostEqual(rate,.1,places=6)
-        self.assertAlmostEqual(float(env.reward_manager._episode_sums['standing_hold'][0]),.0608,places=6)
+        self.assertAlmostEqual(float(env.reward_manager._episode_sums['standing_hold'][0]),.1,places=6)
         term=env.reward_manager.get_term_cfg('standing_hold').func
         env.reward_manager.reset(torch.tensor([0]))
         self.assertEqual(float(term.duration[0]),0.)

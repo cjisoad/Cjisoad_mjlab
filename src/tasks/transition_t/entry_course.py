@@ -24,6 +24,11 @@ class EntryCommandCfg(TransitionCommandCfg):
 
 
 class EntryCommand(TransitionCommand):
+  levels = LEVELS
+
+  def make_course(self):
+    return EntryCurriculum()
+
   def __init__(self, cfg, env):
     super().__init__(cfg, env)
     action = env.cfg.actions['joint_pos']
@@ -35,11 +40,13 @@ class EntryCommand(TransitionCommand):
     self.bank = EntryStateBank(cfg.entry_bank_file, motion_sha256=self.reference.sha256,
       device=self.device, target_limiter_contract=limiter,
       action_zero=self.robot.data.default_joint_pos[0, joint_ids], action_scale=action.scale)
-    self.course = EntryCurriculum()
+    self.course = self.make_course()
     self.entry_index = torch.full_like(self.time_steps, -1)
     self.entry_source = torch.zeros_like(self.time_steps)
     self.forced_entry_indices = None
-    for level in LEVELS:
+    for level in self.levels:
+      if level['entry_probability'] == 0:
+        continue
       for split in ('train', 'holdout'):
         if not len(self.bank.eligible(split=split, max_speed=level['max_speed'], max_fr_error=level['max_fr_error'])):
           raise ValueError(f'Entry bank has no {split} coverage for difficulty {level}')
@@ -107,10 +114,12 @@ class EntryCommand(TransitionCommand):
     self._refresh_relative(actual_p, actual_q)
 
 
-def entry_course_env_cfg(bank_file, *, num_envs=4096, play=False, split='train'):
+def entry_course_env_cfg(bank_file, *, num_envs=4096, play=False, split='train', motion_file=None):
   cfg = transition_env_cfg(play=play)
   cfg.scene.num_envs = num_envs
   old = cfg.commands['motion']
+  if motion_file is not None:
+    old.motion_file = str(motion_file)
   cfg.commands['motion'] = EntryCommandCfg(**{f.name: getattr(old, f.name) for f in fields(old)},
     entry_bank_file=str(bank_file), entry_split=split)
   # Source selection explicitly determines the first-frame probability.

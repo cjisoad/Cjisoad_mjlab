@@ -20,7 +20,7 @@ from .commands import TransitionCommand, TransitionCommandCfg
 from .env_cfg import transition_env_cfg
 from . import terminations
 from .standing import (STANDING_HOLD_SECONDS, advance_standing_hold,
-  standing_conditions, strict_endpoint_candidate, endpoint_metrics)
+  standing_conditions, endpoint_metrics)
 
 TRIPOD, TRANSITION, BIPED = 0, 2, 3
 STATE_NAMES = {TRIPOD: 'TRIPOD', TRANSITION: 'TRANSITION', BIPED: 'BIPED'}
@@ -66,15 +66,13 @@ class KeyboardTransitionCommand(LocoPedipulationTeacherCommand):
     self.trigger_height = .33
     self.trigger_elapsed = torch.zeros(self.num_envs, device=self.device)
     self.bridge_elapsed = torch.zeros_like(self.trigger_elapsed)
-    self.candidate_elapsed = torch.zeros_like(self.trigger_elapsed)
+    self.candidate_elapsed = torch.zeros(self.num_envs, device=self.device, dtype=torch.float64)
     self.candidate_bad_samples = torch.zeros_like(self.owner)
-    self.strict_elapsed = torch.zeros(self.num_envs, device=self.device, dtype=torch.float64)
-    self.strict_held = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
     self.keyboard_command = torch.zeros(self.num_envs, 6, device=self.device)
-    self.keyboard_active = torch.zeros_like(self.strict_held)
-    self.keyboard_input_enabled = torch.zeros_like(self.strict_held)
-    self.keyboard_timed_out = torch.zeros_like(self.strict_held)
-    self.reported_failure = torch.zeros_like(self.strict_held)
+    self.keyboard_active = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
+    self.keyboard_input_enabled = torch.zeros_like(self.keyboard_active)
+    self.keyboard_timed_out = torch.zeros_like(self.keyboard_active)
+    self.reported_failure = torch.zeros_like(self.keyboard_active)
     self.keyboard_revision = torch.zeros_like(self.owner)
     self.keyboard_events = []
     self._last_advance_step = torch.full_like(self.owner, -1)
@@ -88,11 +86,11 @@ class KeyboardTransitionCommand(LocoPedipulationTeacherCommand):
   def _resample_command(self, env_ids):
     self.owner[env_ids] = TRIPOD
     for value in (self.trigger_elapsed, self.bridge_elapsed, self.candidate_elapsed, self.candidate_bad_samples,
-                  self.strict_elapsed, self.keyboard_command, self._command,
+                  self.keyboard_command, self._command,
                   self.requested_velocity, self.requested_offset):
       value[env_ids] = 0.
     for value in (self.keyboard_active, self.keyboard_input_enabled, self.keyboard_timed_out,
-                  self.reported_failure, self.strict_held):
+                  self.reported_failure):
       value[env_ids] = False
     self.manual[env_ids] = True
     self.enabled[env_ids] = False
@@ -152,8 +150,6 @@ class KeyboardTransitionCommand(LocoPedipulationTeacherCommand):
     self.bridge_elapsed[ids] = 0.
     self.candidate_elapsed[ids] = 0.
     self.candidate_bad_samples[ids] = 0
-    self.strict_elapsed[ids] = 0.
-    self.strict_held[ids] = False
     self.keyboard_command[ids, :3] = 0.
     self.keyboard_revision[ids] += 1
     self._event(ids, 'TRIPOD', 'TRANSITION', 'height_and_tracking_hold')
@@ -185,10 +181,6 @@ class KeyboardTransitionCommand(LocoPedipulationTeacherCommand):
       ready, eligible=eligible, active=advancing, dt=dt)
     self.candidate_elapsed.copy_(duration)
     self.candidate_bad_samples.copy_(bad_samples)
-    strict = transitioning & strict_endpoint_candidate(self.progress >= 1., metrics)
-    self.strict_elapsed[:] = torch.where(advancing,
-      torch.where(strict, self.strict_elapsed+dt, 0.), self.strict_elapsed)
-    self.strict_held |= self.strict_elapsed >= 1.-1e-9
     ids = (ready & (self.candidate_elapsed >= STANDING_HOLD_SECONDS-1e-6)).nonzero().flatten()
     if len(ids):
       self.owner[ids] = BIPED
@@ -232,7 +224,7 @@ class KeyboardTransitionCommand(LocoPedipulationTeacherCommand):
       trigger_height=self.trigger_height, trigger_hold=float(self.trigger_elapsed[world]),
       progress=float(self.progress[world]), standing_hold=float(self.candidate_elapsed[world]),
       standing_bad_samples=int(self.candidate_bad_samples[world]),
-      strict_hold=float(self.strict_elapsed[world]), strict_held=bool(self.strict_held[world]),
+      xy_error=float(metrics['xy_error'][world]),
       fr_error=float(self.fr_error[world].norm()), feet_rms=float(metrics['feet_rms'][world]), missing=missing)
 
 

@@ -81,11 +81,25 @@ class TransitionOnPolicyRunner(MjlabOnPolicyRunner):
     super().save(path, {**(infos or {}), 'transition_t_contract': self._contract(),
                         'transition_t_sampling': sampling})
 
-  def load(self, path, load_cfg=None, strict=True, map_location=None, *, allow_legacy_target_limiter=False):
+  def load(self, path, load_cfg=None, strict=True, map_location=None, *,
+      allow_legacy_target_limiter=False, allow_reference_migration=False):
     saved = torch.load(path, map_location='cpu', weights_only=False)
     metadata = saved.get('infos') or {}
     current = self._contract()
     source = metadata.get('transition_t_contract')
+    reference_migration = False
+    if (allow_reference_migration and isinstance(source, dict)
+        and source.get('motion_sha256') != current['motion_sha256']):
+      digest = source.get('motion_sha256')
+      bins = source.get('adaptive_bins')
+      if (not isinstance(digest, str) or len(digest) != 64
+          or any(c not in '0123456789abcdef' for c in digest)
+          or type(bins) is not int or bins < 1):
+        raise ValueError('Invalid source reference contract')
+      # Only the reference identity and its phase-bin count may change.
+      source = {**source, 'motion_sha256': current['motion_sha256'],
+        'adaptive_bins': current['adaptive_bins']}
+      reference_migration = True
     if source != current:
       legacy = {key: value for key, value in current.items() if key != 'target_limiter'}
       legacy['version'] = 2
@@ -95,8 +109,12 @@ class TransitionOnPolicyRunner(MjlabOnPolicyRunner):
       if load_cfg is None or any(load_cfg.get(key) for key in ('optimizer', 'iteration', 'rnd')):
         raise ValueError('Legacy target limiter migration loads policy weights only, never optimizer or iteration')
       print('TRANSITION_TARGET_LIMITER_MIGRATION old unlimited policy; new execution limits require retraining', flush=True)
+    if reference_migration:
+      if load_cfg is None or any(load_cfg.get(key) for key in ('optimizer', 'iteration', 'rnd')):
+        raise ValueError('Reference migration loads weights only, never optimizer or iteration')
+      print(f'TRANSITION_REFERENCE_MIGRATION {digest} -> {current["motion_sha256"]}; fresh phase sampling', flush=True)
     sampling = metadata.get('transition_t_sampling', {})
-    for name in ('bin_failed_count', '_current_bin_failed'):
+    for name in (() if reference_migration else ('bin_failed_count', '_current_bin_failed')):
       value = sampling.get(name)
       target = getattr(self.term, name)
       if (not isinstance(value, torch.Tensor) or value.shape != target.shape
@@ -111,7 +129,9 @@ class TransitionOnPolicyRunner(MjlabOnPolicyRunner):
             if value.is_inference():
               setattr(module, name, value.clone())
     infos = super().load(path, load_cfg=load_cfg, strict=strict, map_location=map_location)
-    for name, value in sampling.items():
-      if name in ('bin_failed_count', '_current_bin_failed'):
-        getattr(self.term, name).copy_(value)
+    for name in ('bin_failed_count', '_current_bin_failed'):
+      if reference_migration:
+        getattr(self.term, name).zero_()
+      else:
+        getattr(self.term, name).copy_(sampling[name])
     return infos

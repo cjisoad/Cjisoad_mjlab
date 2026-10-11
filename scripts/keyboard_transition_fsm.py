@@ -122,14 +122,14 @@ def run(args):
         status = self.get_status()
         state = term.status(self.env_idx)
         labels = ('Simulation\nActive policy\nTransition model\nInput\nRequested FR dz\nExecuted FR dz\n'
-          'Trigger FR dz\nTrigger hold\nReference progress\nStanding handoff hold\n'
-          'Strict endpoint hold\nWorld feet RMS (diagnostic)\nFR error (diagnostic)\nUnmet standing gates\nReset')
+          'Trigger FR dz\nTrigger hold\nReference progress\nPosition hold\n'
+          'Endpoint XY error\nWorld feet RMS (diagnostic)\nFR error (diagnostic)\nUnmet position/posture gates\nReset')
         values = (f"{'PAUSED' if status.paused else 'RUNNING'}\n{state['state']}\n"
           f"transition_t/{paths['transition_t'].name}\n{'ACTIVE' if keyboard.focused else 'INACTIVE'}\n"
           f"{state['requested_dz']:.3f}m\n{state['executed_dz']:.3f}m\n{state['trigger_height']:.3f}m\n"
           f"{state['trigger_hold']:.2f}/0.10s\n{state['progress']:.0%}\n{state['standing_hold']:.2f}/1.00s\n"
-          f"{'PASSED' if state['strict_held'] else format(state['strict_hold'], '.2f')+'/1.00s'}\n"
-          f"{state['feet_rms']:.3f}m / 0.060m\n{state['fr_error']:.3f}m\n"
+          f"{state['xy_error']:.3f}m / 0.080m\n"
+          f"{state['feet_rms']:.3f}m\n{state['fr_error']:.3f}m\n"
           f"{', '.join(state['missing']) or 'none'}\nBackspace")
         viewer.set_texts((mujoco.mjtFontScale.mjFONTSCALE_150.value,
           mujoco.mjtGridPos.mjGRID_TOPLEFT.value, labels, values))
@@ -141,7 +141,7 @@ def run(args):
     print('[INFO] Target limiter: '+json.dumps(limiter.contract()), flush=True)
     print(f'[INFO] Trigger FR dz={term.trigger_height:.3f}m after 0.10s tracking hold.', flush=True)
     print('[INFO] Physical state and action history persist across handoffs; the reference aligns XY/yaw only.', flush=True)
-    print('[INFO] Standing contact/posture gates control handoff; world feet RMS is a separate strict endpoint diagnostic.', flush=True)
+    print('[INFO] Handoff: reference complete, upright and within 8cm of aligned endpoint for 1s; in-place stepping allowed.', flush=True)
     print('[INFO] WASD: velocity; arrows: FR XY; Q/E: height; R: default; Backspace: reset; Space: pause.', flush=True)
     print('[INFO] Transition input is frozen; a 10s transition timeout pauses without forcing biped handoff.', flush=True)
     KeyboardViewer().run()

@@ -20,6 +20,7 @@ def good_metrics(count=1):
   return {
     'orientation_error': torch.full((count,), .1),
     'height_error': torch.full((count,), .01),
+    'xy_error': torch.zeros(count),
     'feet_rms': torch.full((count,), .01),
     'linear_speed': torch.full((count,), .1),
     'angular_speed': torch.full((count,), .1),
@@ -94,78 +95,29 @@ class ScriptedEnv:
 
 
 class EntryEvaluationHelpers(unittest.TestCase):
-  def test_hold_timer_requires_completion_and_resets_on_third_bad_sample(self):
-    m = module()
-    trials = m.EntryTrials(1, .02, device='cpu')
+  def test_hold_requires_completion_and_continuous_position_window(self):
+    trials = module().EntryTrials(1, .02, device='cpu')
     metrics = good_metrics()
-    completed = torch.zeros(1, dtype=torch.bool)
-    healthy = torch.zeros_like(completed)
-    for _ in range(60):
-      trials.record(completed, metrics, healthy, healthy)
-      self.assertFalse(trials.standing_held[0])
+    completed = torch.zeros(1, dtype=torch.bool); healthy = ~completed
+    for _ in range(60): trials.record(completed, metrics, ~healthy, ~healthy)
+    self.assertFalse(trials.standing_held[0])
     completed[:] = True
-    for _ in range(25):
-      trials.record(completed, metrics, healthy, healthy)
-      self.assertFalse(trials.standing_held[0])
-    metrics['front_clear'][:] = False
-    for bad_count in (1, 2):
-      trials.record(completed, metrics, healthy, healthy)
-      self.assertAlmostEqual(float(trials.standing_duration[0]), .5)
-      self.assertEqual(int(trials.standing_bad_samples[0]), bad_count)
-      self.assertFalse(trials.standing_held[0])
+    healthy = torch.zeros_like(completed)
+    for _ in range(25): trials.record(completed, metrics, healthy, healthy)
+    metrics['xy_error'][:] = .09
     trials.record(completed, metrics, healthy, healthy)
     self.assertEqual(float(trials.standing_duration[0]), 0.)
-    metrics['front_clear'][:] = True
-    for _ in range(49):
-      trials.record(completed, metrics, healthy, healthy)
-      self.assertFalse(trials.standing_held[0])
-    trials.record(completed, metrics, healthy, healthy)
-    self.assertTrue(trials.standing_held[0])
-    self.assertTrue(trials.finished[0])
-
-  def test_recovery_preserves_credit_and_restarts_bad_sample_streak(self):
-    trials = module().EntryTrials(1, .02, device='cpu')
-    metrics = good_metrics()
-    completed = torch.ones(1, dtype=torch.bool)
-    healthy = torch.zeros_like(completed)
-    for _ in range(25):
-      trials.record(completed, metrics, healthy, healthy)
-    for _ in range(2):
-      metrics['rear_supported'][:] = False
-      trials.record(completed, metrics, healthy, healthy)
-    metrics['rear_supported'][:] = True
-    trials.record(completed, metrics, healthy, healthy)
-    self.assertAlmostEqual(float(trials.standing_duration[0]), .52)
-    self.assertEqual(int(trials.standing_bad_samples[0]), 0)
+    metrics['xy_error'][:] = 0.
     metrics['rear_supported'][:] = False
-    for _ in range(2):
-      trials.record(completed, metrics, healthy, healthy)
-    self.assertAlmostEqual(float(trials.standing_duration[0]), .52)
-    metrics['rear_supported'][:] = True
-    for _ in range(23):
-      trials.record(completed, metrics, healthy, healthy)
-    self.assertFalse(trials.standing_held[0])
+    for _ in range(49): trials.record(completed, metrics, healthy, healthy)
+    self.assertFalse(trials.finished[0])
     trials.record(completed, metrics, healthy, healthy)
     self.assertTrue(trials.standing_held[0])
 
-  def test_different_failed_conditions_count_as_consecutive_bad_samples(self):
+  def test_stepping_has_no_strict_success_diagnostic(self):
     trials = module().EntryTrials(1, .02, device='cpu')
-    completed = torch.ones(1, dtype=torch.bool)
-    healthy = torch.zeros_like(completed)
-    trials.record(completed, good_metrics(), healthy, healthy)
-    for i, condition in enumerate(('rear_supported', 'front_clear', 'rear_supported'), 1):
-      metrics = good_metrics(); metrics[condition][:] = False
-      trials.record(completed, metrics, healthy, healthy)
-      self.assertEqual(int(trials.standing_bad_samples[0]), i)
-      self.assertAlmostEqual(float(trials.standing_duration[0]), .02 if i < 3 else 0.)
-
-  def test_tolerated_bad_sample_pauses_standing_without_strict_diagnostic(self):
-    trials = module().EntryTrials(1, .02, device='cpu')
-    completed = torch.ones(1, dtype=torch.bool)
-    healthy = torch.zeros_like(completed)
-    metrics = good_metrics()
-    trials.record(completed, metrics, healthy, healthy)
-    metrics['rear_supported'][:] = False
+    completed = torch.ones(1, dtype=torch.bool); healthy = ~completed
+    metrics = good_metrics(); metrics['rear_supported'][:] = False
     trials.record(completed, metrics, healthy, healthy)
     self.assertAlmostEqual(float(trials.standing_duration[0]), .02)
     record = trials.records()[0]
@@ -206,7 +158,7 @@ class EntryEvaluationHelpers(unittest.TestCase):
     completed = torch.ones(2, dtype=torch.bool)
     healthy = torch.zeros_like(completed)
     metrics = good_metrics(2)
-    metrics['front_clear'][0] = False
+    metrics['xy_error'][0] = .09
     metrics['feet_rms'][0] = .12
     for _ in range(10):
       trials.record(completed, metrics, healthy, healthy)
@@ -223,7 +175,7 @@ class EntryEvaluationHelpers(unittest.TestCase):
     m = module()
     trials = m.EntryTrials(1, .02, device='cpu')
     metrics = good_metrics()
-    metrics['front_clear'][:] = False
+    metrics['xy_error'][:] = .09
     completed = torch.ones(1, dtype=torch.bool)
     healthy = torch.zeros_like(completed)
     for _ in range(499):

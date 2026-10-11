@@ -1,19 +1,22 @@
-"""Standing time credit shared by held-out trials and teacher handoff."""
+"""Upright position hold shared by held-out trials and teacher handoff."""
 import torch
-from mjlab.utils.lab_api.math import quat_error_magnitude
+from mjlab.utils.lab_api.math import quat_apply, quat_error_magnitude, quat_inv, quat_mul, yaw_quat
 
 STANDING_HOLD_SECONDS = 1.
-STANDING_BAD_SAMPLE_LIMIT = 3
+STANDING_BAD_SAMPLE_LIMIT = 1
+POSITION_RADIUS = .08
 
 
-def standing_hold_policy():
+def standing_hold_policy(position_radius=POSITION_RADIUS):
   return dict(hold_s=STANDING_HOLD_SECONDS, bad_sample_limit=STANDING_BAD_SAMPLE_LIMIT,
-    bad_sample_credit='pause', success_requires_good_sample=True,
-    physical_failure='immediate', strict_endpoint='uninterrupted')
+    bad_sample_credit='reset', success_requires_good_sample=True,
+    physical_failure='immediate', objective='upright_position_hold_v2',
+    xy_radius_m=position_radius, orientation_limit_rad=.25, height_limit_m=.05,
+    target='fixed_aligned_reference_endpoint', contact_and_speed='diagnostic_only')
 
 
 def advance_standing_hold(duration, bad_samples, good, *, eligible, active, dt):
-  """Pause credit for two bad samples, resetting on the third.
+  """Accumulate continuous good time, resetting on any out-of-bound sample.
 
   Ineligible active worlds clear immediately (e.g. reference incomplete or
   physical failure); inactive worlds retain their captured state. Call once per
@@ -26,19 +29,10 @@ def advance_standing_hold(duration, bad_samples, good, *, eligible, active, dt):
   return torch.where(active, next_duration, duration), torch.where(active, next_bad, bad_samples)
 
 
-def standing_conditions(metrics):
-  """Contact/posture handoff; global foot accuracy is reported separately."""
+def standing_conditions(metrics, position_radius=POSITION_RADIUS):
+  """Allow stepping; require upright posture near the fixed endpoint."""
   return dict(orientation=metrics['orientation_error'] < .25,
-    height=metrics['height_error'] < .05, linear_speed=metrics['linear_speed'] < .3,
-    angular_speed=metrics['angular_speed'] < .8, rear_support=metrics['rear_supported'],
-    front_clear=metrics['front_clear'], joint_speed=metrics['joint_speed'] < 20.)
-
-
-def strict_endpoint_candidate(completed, metrics):
-  # Same criteria as evaluate_transition_t.py; joint speed is a handoff-only gate.
-  return (completed & (metrics['orientation_error'] < .25) & (metrics['height_error'] < .05)
-    & (metrics['feet_rms'] < .06) & (metrics['linear_speed'] < .3)
-    & (metrics['angular_speed'] < .8) & metrics['rear_supported'] & metrics['front_clear'])
+    height=metrics['height_error'] < .05, position=metrics['xy_error'] <= position_radius)
 
 
 def endpoint_metrics(env):
@@ -51,11 +45,26 @@ def endpoint_metrics(env):
   contact = env.scene['feet_ground_contact'].data
   forces = contact.force.reshape(env.num_envs, 4, -1, 3).sum(2).norm(dim=-1)
   found = contact.found.reshape(env.num_envs, 4, -1).any(-1)
+  endpoint = (quat_apply(motion.reference_rotation,
+    motion.motion.body_pos_w[-1, motion.motion_anchor_body_index].expand(env.num_envs, -1))
+    + motion.reference_translation + env.scene.env_origins)
+  # Pre-reset evaluation capture runs before command updates. Rebuild the
+  # aligned target from this physical sample without changing command state.
+  alignment = yaw_quat(quat_mul(motion.robot_anchor_quat_w, quat_inv(motion.anchor_quat_w)))
+  origin = motion.robot_anchor_pos_w.clone()
+  origin[:, 2] = motion.anchor_pos_w[:, 2]
+  aligned_feet = origin[:, None] + quat_apply(alignment[:, None].expand(-1, 4, -1),
+    motion.body_pos_w[:, ref_ids]-motion.anchor_pos_w[:, None])
+  aligned_error = (feet-aligned_feet).norm(dim=-1)
   return dict(orientation_error=quat_error_magnitude(motion.anchor_quat_w, motion.robot_anchor_quat_w),
     height_error=(motion.anchor_pos_w[:, 2]-motion.robot_anchor_pos_w[:, 2]).abs(),
+    xy_error=(endpoint[:, :2]-motion.robot_anchor_pos_w[:, :2]).norm(dim=-1),
     feet_rms=(feet-motion.body_pos_w[:, ref_ids]).square().sum(-1).mean(-1).sqrt(),
     linear_speed=motion.robot_anchor_lin_vel_w.norm(dim=-1),
+    horizontal_speed=motion.robot_anchor_lin_vel_w[:, :2].norm(dim=-1),
     angular_speed=motion.robot_anchor_ang_vel_w.norm(dim=-1),
     rear_supported=(found[:, 2:] & (forces[:, 2:] > 5.)).all(-1),
+    rear_any_contact=found[:, 2:].any(-1),
     front_clear=(~found[:, :2]).all(-1) & (feet[:, :2, 2] > .032).all(-1),
-    joint_speed=robot.data.joint_vel.norm(dim=-1))
+    joint_speed=robot.data.joint_vel.norm(dim=-1),
+    **{f'{leg}_aligned_error': aligned_error[:, i] for i, leg in enumerate(('FL','FR','RL','RR'))})

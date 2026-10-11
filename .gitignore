@@ -3,6 +3,9 @@
 outputs
 logs
 wandb
+clearml.conf
+.clearml.conf
+clearml-cache/
 MUJOCO_LOG.TXT
 deploy/robots/go2/build
 deploy/robots/g1/build

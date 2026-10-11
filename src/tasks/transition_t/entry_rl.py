@@ -46,7 +46,7 @@ class EntryOnPolicyRunner(TransitionOnPolicyRunner):
       nominal_joint_position_range=cfg.commands['motion'].joint_position_range)
 
   def _entry_recipe(self):
-    return dict(version=6, bank_sha256=self.term.bank.sha256,
+    return dict(version=7, bank_sha256=self.term.bank.sha256,
       teacher_sha256=self.term.bank.metadata['teacher_sha256'], levels=list(LEVELS),
       speed_edges=list(SPEED_EDGES), error_edges=list(ERROR_EDGES),
       split='trajectory_id_modulo_5', sampling='uniform_occupied_bins_then_states',
@@ -63,8 +63,9 @@ class EntryOnPolicyRunner(TransitionOnPolicyRunner):
     cfg = self.env.unwrapped.cfg
     return dict(episode_length_s=cfg.episode_length_s, scale_rewards_by_dt=cfg.scale_rewards_by_dt,
       rewards=_recipe_value(cfg.rewards), standing_hold=standing_hold_policy(),
-      hold_shaping=dict(version=1, initial_credit=.2, duration_gain=.8,
-        ramp_s=1., maximum_raw_reward=1., bad_sample_reward=0.))
+      hold_shaping=dict(version=2, formula='exp(-(xy_error/0.08)^2)',
+        posture='orientation<0.25,height<0.05', contact_gate=False,
+        timer_ramp=False, maximum_raw_reward=1.))
 
   def _verify_bank_physics(self):
     contract = self._contract()
@@ -72,14 +73,15 @@ class EntryOnPolicyRunner(TransitionOnPolicyRunner):
       if self.term.bank.metadata.get(key) != contract[key]:
         raise ValueError(f'Entry bank {key} differs from transition nominal physics')
 
-  def warm_start(self, path):
+  def warm_start(self, path, *, allow_reference_migration=False):
     path = Path(path).resolve()
     self._verify_bank_physics()
     saved = torch.load(path, map_location='cpu', weights_only=False)
     if 'transition_entry_training' in (saved.get('infos') or {}):
       raise ValueError('Use resume for an entry-course checkpoint')
     info = super().load(str(path), load_cfg={'actor': True, 'critic': True},
-      map_location=self.device, allow_legacy_target_limiter=True)
+      map_location=self.device, allow_legacy_target_limiter=True,
+      allow_reference_migration=allow_reference_migration)
     self.seed_checkpoint_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
     self.current_learning_iteration = 0
     self.term.bin_failed_count.zero_()
