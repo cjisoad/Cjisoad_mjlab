@@ -101,6 +101,81 @@ def test_controller_reset_restores_lights_lift_and_landing_gates(scene):
     assert _joint_position(model, data, "lift_z") == pytest.approx(5.6)
 
 
+def test_initial_platform_and_open_gate_are_physically_aligned(scene):
+    model, data, _ = scene
+    platform = model.geom("lift_platform").id
+    floor = model.geom("floor_f3").id
+    platform_top = data.geom_xpos[platform, 2] + model.geom_size[platform, 2]
+    floor_top = data.geom_xpos[floor, 2] + model.geom_size[floor, 2]
+    assert platform_top == pytest.approx(floor_top, abs=0.001)
+    assert data.geom_xpos[model.geom("geom_gate_f3").id, 1] > 1.5
+
+
+def test_queued_trips_open_the_arrival_gate_before_departing(scene):
+    model, data, controller = scene
+    controller.request_floor(1)
+    controller.request_floor(2)
+    reached_first = False
+    open_since = None
+    for _ in range(20000):
+        controller.apply_mouse_forces()
+        mujoco.mj_step(model, data)
+        controller.update()
+        if controller.current_floor == 1:
+            reached_first = True
+            if _joint_position(model, data, "joint_gate_f1") > 1.7 and open_since is None:
+                open_since = data.time
+            if controller.motion_active:
+                assert open_since is not None, "queued trip departed without opening the gate"
+                assert data.time - open_since >= 1.0
+                break
+    else:
+        pytest.fail("queued trip never departed floor one")
+    assert reached_first
+
+
+@pytest.mark.parametrize("payload_mass", [0.0, 15.0])
+def test_middle_and_upward_trips_align_platform_with_payload(payload_mass):
+    spec = mujoco.MjSpec.from_file(str(SCENE))
+    if payload_mass:
+        payload = spec.worldbody.add_body(name="test_payload", pos=(4.15, -0.2, 5.8))
+        payload.add_joint(type=mujoco.mjtJoint.mjJNT_FREE)
+        payload.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX, size=(0.2, 0.2, 0.1), mass=payload_mass)
+    model = spec.compile()
+    data = mujoco.MjData(model)
+    controller = ThreeFloorElevatorController(model, data)
+    controller.reset()
+    for destination in (2, 3):
+        controller.request_floor(destination)
+        peak_speed = 0.0
+        for _ in range(12500):
+            controller.apply_mouse_forces()
+            mujoco.mj_step(model, data)
+            controller.update()
+            peak_speed = max(peak_speed, abs(float(data.qvel[controller.lift_dofadr])))
+            if controller.current_floor == destination and not controller.motion_active:
+                break
+        assert controller.current_floor == destination
+        assert peak_speed <= 1.6
+        mujoco.mj_forward(model, data)
+        platform_top = data.geom_xpos[model.geom("lift_platform").id, 2] + 0.09
+        assert platform_top == pytest.approx(controller.FLOOR_Z[destination], abs=0.02)
+        if payload_mass:
+            assert abs(data.body("test_payload").xpos[2] - platform_top - 0.1) < 0.02
+
+
+def test_closed_landing_has_no_unprotected_rear_gap(scene):
+    import numpy as np
+    model, data, _ = scene
+    # mj_ray skips alpha-zero geoms; expose the collision boundary for probing.
+    model.geom_rgba[model.geom("collision_right_back_f1").id, 3] = 1.0
+    geom_id = np.array([-1], dtype=np.int32)
+    distance = mujoco.mj_ray(model, data, np.array([2.8, 1.2, 0.5]),
+                             np.array([1., 0., 0.]), None, True, -1, geom_id)
+    assert 0.0 < distance < 0.2
+    assert model.geom(int(geom_id[0])).name == "collision_right_back_f1"
+
+
 def test_idle_lift_holds_its_floor_against_gravity(scene):
     model, data, controller = scene
     for _ in range(1000):
@@ -241,9 +316,13 @@ def test_mouse_press_uses_the_same_physical_button_and_event_path(scene):
     assert not model.light_active[lamp_id]
 
 
-def test_robot_side_contact_can_press_the_first_floor_elevator_call():
+@pytest.mark.parametrize("button,position", [
+    ("call_up_f1", (2.62, -0.95, 1.1)),
+    ("cab_f1", (4.90, -0.87, 6.7)),
+])
+def test_robot_side_contact_can_press_call_and_cabin_buttons(button, position):
     spec = mujoco.MjSpec.from_file(str(SCENE))
-    pusher = spec.worldbody.add_body(name="call_test_pusher", pos=(2.62, -0.95, 1.1))
+    pusher = spec.worldbody.add_body(name="call_test_pusher", pos=position)
     pusher.add_joint(name="call_test_pusher_free", type=mujoco.mjtJoint.mjJNT_FREE)
     pusher.add_geom(
         name="call_test_pusher_geom",
@@ -262,7 +341,7 @@ def test_robot_side_contact_can_press_the_first_floor_elevator_call():
     for _ in range(1000):
         data.xfrc_applied[pusher_id, 0] = 25.0
         mujoco.mj_step(model, data)
-        max_button_position = max(max_button_position, _joint_position(model, data, "joint_call_up_f1"))
+        max_button_position = max(max_button_position, _joint_position(model, data, "joint_" + button))
         controller.update()
         if controller.current_target == 1 and controller.motion_active:
             break
@@ -287,9 +366,29 @@ def test_mouse_picker_maps_selected_button_geom_to_its_logical_name(scene, monke
     monkeypatch.setattr(mujoco, "mjv_select", select)
     assert pick_button(model, data, scene_stub, option, 16 / 9, 0.5, 0.5) == "cab_f2"
 
+    selected_geom = _object_id(model, mujoco.mjtObj.mjOBJ_GEOM, "mark_cab_f2_a")
+    assert pick_button(model, data, scene_stub, option, 16 / 9, 0.5, 0.5) == "cab_f2"
+
+    selected_geom = _object_id(model, mujoco.mjtObj.mjOBJ_GEOM, "geom_gate_f1")
+    assert pick_button(model, data, scene_stub, option, 16 / 9, 0.5, 0.5) is None
+
     def select_nothing(_model, _data, _option, _aspect, _relx, _rely, _scene, _point, geomid, _flexid, _skinid):
         geomid[0] = -1
         return -1
 
     monkeypatch.setattr(mujoco, "mjv_select", select_nothing)
     assert pick_button(model, data, scene_stub, option, 16 / 9, 0.95, 0.05) is None
+
+
+def test_external_entry_button_calls_the_elevator_from_floor_one(scene):
+    model, data, controller = scene
+    assert model.geom("entry_pad").size[0] >= 1.0
+    controller.mouse_press("entry_call_up_f1")
+    for _ in range(150):
+        controller.apply_mouse_forces()
+        mujoco.mj_step(model, data)
+        controller.update()
+        if controller.current_target == 1:
+            break
+    assert controller.current_target == 1
+    assert controller.motion_active

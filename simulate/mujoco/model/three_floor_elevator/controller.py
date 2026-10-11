@@ -23,6 +23,7 @@ class ThreeFloorElevatorController:
     GATE_VELOCITY_TOLERANCE = 0.03
     GATE_CLOSED = 0.0
     GATE_OPEN = 1.8
+    DOOR_DWELL = 2.0
 
     BUTTON_NAMES = (
         "light_f1",
@@ -32,6 +33,7 @@ class ThreeFloorElevatorController:
         "call_up_f2",
         "call_down_f2",
         "call_down_f3",
+        "entry_call_up_f1",
         "cab_f1",
         "cab_f2",
         "cab_f3",
@@ -42,6 +44,7 @@ class ThreeFloorElevatorController:
         "call_up_f2": "indicator_call_up_f2",
         "call_down_f2": "indicator_call_down_f2",
         "call_down_f3": "indicator_call_down_f3",
+        "entry_call_up_f1": "indicator_entry_call_up_f1",
     }
 
     INDICATOR_ACTIVE_RGBA = (0.12, 0.82, 0.32, 1.0)
@@ -109,6 +112,7 @@ class ThreeFloorElevatorController:
         self.motion_active = False
         self.doors_closing = False
         self._motion_goal = self.FLOOR_Z[3]
+        self._gate_open_since: float | None = -self.DOOR_DWELL
 
     def _resolve(self, object_type: mujoco.mjtObj, name: str) -> int:
         object_id = mujoco.mj_name2id(self.model, object_type, name)
@@ -155,6 +159,7 @@ class ThreeFloorElevatorController:
         self.motion_active = False
         self.doors_closing = False
         self._motion_goal = self.FLOOR_Z[3]
+        self._gate_open_since = -self.DOOR_DWELL
         mujoco.mj_forward(self.model, self.data)
         self._apply_lift_gravity_compensation()
         mujoco.mj_forward(self.model, self.data)
@@ -217,7 +222,7 @@ class ThreeFloorElevatorController:
             self._set_lamp_emission(floor, is_active)
             return
 
-        if name.startswith("call_"):
+        if name in self.CALL_INDICATORS:
             floor = int(name[-1])
             self.request_floor(floor)
             if floor != self.current_floor:
@@ -244,7 +249,17 @@ class ThreeFloorElevatorController:
         self._last_lift_gravity_compensation = self._lift_gravity_compensation
 
     def _start_next_floor_if_idle(self) -> None:
-        if self.motion_active or not self._pending:
+        if self.motion_active:
+            return
+
+        gate_position = self.data.qpos[self.gate_qposadr[self.current_floor]]
+        if gate_position < self.GATE_OPEN - 0.1:
+            self._gate_open_since = None
+            return
+        if self._gate_open_since is None:
+            self._gate_open_since = float(self.data.time)
+        # Wait for a fully open gate and a boarding interval between trips.
+        if not self._pending or self.data.time - self._gate_open_since < self.DOOR_DWELL:
             return
 
         floor = self._pending.popleft()
@@ -289,6 +304,7 @@ class ThreeFloorElevatorController:
             self.doors_closing = False
             self.data.ctrl[self.lift_actuator_id] = self._motion_goal
             self.data.ctrl[self.gate_actuator_ids[self.current_floor]] = self.GATE_OPEN
+            self._gate_open_since = None
             self._clear_floor_indicators(self.current_floor)
             return
 

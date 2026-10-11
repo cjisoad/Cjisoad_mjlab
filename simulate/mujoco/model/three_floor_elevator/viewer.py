@@ -85,13 +85,16 @@ def pick_button(
     if body_id < 0 or geom_id[0] < 0:
         return None
 
-    geom_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, int(geom_id[0]))
-    if not geom_name or not geom_name.startswith("geom_"):
+    # Labels belong to the same moving body as the plunger, and are clickable.
+    body_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY,
+                                 int(model.geom_bodyid[int(geom_id[0])]))
+    if not body_name or not body_name.startswith("button_"):
         return None
-    return geom_name.removeprefix("geom_")
+    name = body_name.removeprefix("button_")
+    return name if name in ThreeFloorElevatorController.BUTTON_NAMES else None
 
 
-def _make_camera() -> mujoco.MjvCamera:
+def _make_camera(model: mujoco.MjModel | None = None) -> mujoco.MjvCamera:
     camera = mujoco.MjvCamera()
     mujoco.mjv_defaultCamera(camera)
     camera.type = mujoco.mjtCamera.mjCAMERA_FREE
@@ -99,6 +102,14 @@ def _make_camera() -> mujoco.MjvCamera:
     camera.distance = 14.0
     camera.azimuth = 90.0
     camera.elevation = -12.0
+    if model is not None:
+        authored = model.camera("front_overview")
+        rotation = np.empty(9)
+        mujoco.mju_quat2Mat(rotation, authored.quat)
+        forward = -rotation.reshape(3, 3)[:, 2]
+        camera.lookat[:] = authored.pos + camera.distance * forward
+        camera.azimuth = math.degrees(math.atan2(forward[1], forward[0]))
+        camera.elevation = math.degrees(math.asin(forward[2]))
     return camera
 
 
@@ -169,7 +180,7 @@ def run(
 
         renderer = mujoco.Renderer(model, height=WINDOW_HEIGHT, width=WINDOW_WIDTH)
         glfw.make_context_current(window)
-        camera = _make_camera()
+        camera = _make_camera(model)
         option = mujoco.MjvOption()
         mujoco.mjv_defaultOption(option)
         option.geomgroup[3] = 0
