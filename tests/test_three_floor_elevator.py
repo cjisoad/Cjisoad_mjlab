@@ -45,15 +45,15 @@ def test_scene_exposes_three_floors_lights_and_button_groups():
     ):
         _object_id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
 
-    for floor in (1, 2, 3):
-        _object_id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, f"gate_f{floor}")
-        _object_id(model, mujoco.mjtObj.mjOBJ_GEOM, f"geom_gate_f{floor}")
+    for side in ("front", "back"):
+        _object_id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, f"car_door_{side}")
+        _object_id(model, mujoco.mjtObj.mjOBJ_GEOM, f"geom_car_door_{side}")
 
     assert model.nlight >= 3
     assert model.nbody < 200
 
 
-def test_scene_starts_lights_on_and_lift_at_floor_three_with_only_top_gate_open():
+def test_scene_starts_lights_on_and_lift_at_floor_three_with_car_doors_open():
     model = mujoco.MjModel.from_xml_path(str(SCENE))
     data = mujoco.MjData(model)
     lift_joint = _object_id(model, mujoco.mjtObj.mjOBJ_JOINT, "lift_z")
@@ -64,10 +64,42 @@ def test_scene_starts_lights_on_and_lift_at_floor_three_with_only_top_gate_open(
         lamp_id = _object_id(model, mujoco.mjtObj.mjOBJ_LIGHT, f"lamp_f{floor}")
         assert model.light_active[lamp_id]
 
-    for floor, target in ((1, 0.0), (2, 0.0), (3, 1.8)):
-        gate_joint = _object_id(model, mujoco.mjtObj.mjOBJ_JOINT, f"joint_gate_f{floor}")
-        gate_qpos = model.jnt_qposadr[gate_joint]
-        assert data.qpos[gate_qpos] == pytest.approx(target)
+    for side in ("front", "back"):
+        assert _joint_position(model, data, f"joint_car_door_{side}") == pytest.approx(0.65)
+
+
+def test_lobbies_connect_room_floors_and_doors_belong_to_car():
+    model = mujoco.MjModel.from_xml_path(str(SCENE))
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+    car = model.body("elevator_car").id
+    for floor in (1, 2, 3):
+        lobby = model.geom(f"lobby_floor_f{floor}").id
+        room = model.geom(f"floor_f{floor}").id
+        assert data.geom_xpos[lobby, 2] + model.geom_size[lobby, 2] == pytest.approx((floor - 1) * 2.8)
+        assert data.geom_xpos[lobby, 0] - model.geom_size[lobby, 0] == pytest.approx(3.0)
+        assert data.geom_xpos[room, 0] + model.geom_size[room, 0] == pytest.approx(3.0)
+        assert mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"gate_body_f{floor}") == -1
+    for side in ("front", "back"):
+        assert model.body(f"car_door_body_{side}").parentid[0] == car
+
+
+def test_car_has_clear_vertical_travel_past_lobby_edges(scene):
+    import numpy as np
+    model, data, controller = scene
+    car = model.body("elevator_car").id
+    car_bodies = {car}
+    for body in range(model.nbody):
+        if int(model.body_parentid[body]) in car_bodies:
+            car_bodies.add(body)
+    for height in np.linspace(0, 5.6, 113):
+        data.qpos[controller.lift_qposadr] = height
+        mujoco.mj_forward(model, data)
+        for contact in data.contact:
+            on_car = [int(model.geom_bodyid[g]) in car_bodies for g in (contact.geom1, contact.geom2)]
+            assert not (any(on_car) and not all(on_car) and contact.dist < 0), (
+                height, model.geom(contact.geom1).name, model.geom(contact.geom2).name
+            )
 
 
 @pytest.fixture
@@ -89,29 +121,31 @@ def _joint_position(model, data, joint_name):
     return data.qpos[model.jnt_qposadr[joint_id]]
 
 
-def test_controller_reset_restores_lights_lift_and_landing_gates(scene):
+def test_controller_reset_restores_lights_lift_and_car_doors(scene):
     model, data, controller = scene
     assert controller.current_floor == 3
     assert not controller.motion_active
     assert controller.pending_floors == ()
-    for floor, expected in ((1, 0.0), (2, 0.0), (3, 1.8)):
-        assert _joint_position(model, data, f"joint_gate_f{floor}") == pytest.approx(expected)
+    for side in ("front", "back"):
+        assert _joint_position(model, data, f"joint_car_door_{side}") == pytest.approx(0.65)
+    for floor in (1, 2, 3):
         lamp_id = _object_id(model, mujoco.mjtObj.mjOBJ_LIGHT, f"lamp_f{floor}")
         assert model.light_active[lamp_id]
     assert _joint_position(model, data, "lift_z") == pytest.approx(5.6)
 
 
-def test_initial_platform_and_open_gate_are_physically_aligned(scene):
+def test_initial_platform_and_open_car_doors_are_physically_aligned(scene):
     model, data, _ = scene
     platform = model.geom("lift_platform").id
     floor = model.geom("floor_f3").id
     platform_top = data.geom_xpos[platform, 2] + model.geom_size[platform, 2]
     floor_top = data.geom_xpos[floor, 2] + model.geom_size[floor, 2]
     assert platform_top == pytest.approx(floor_top, abs=0.001)
-    assert data.geom_xpos[model.geom("geom_gate_f3").id, 1] > 1.5
+    assert data.geom_xpos[model.geom("geom_car_door_front").id, 1] < -1.1
+    assert data.geom_xpos[model.geom("geom_car_door_back").id, 1] > 0.7
 
 
-def test_queued_trips_open_the_arrival_gate_before_departing(scene):
+def test_queued_trips_open_car_doors_before_departing(scene):
     model, data, controller = scene
     controller.request_floor(1)
     controller.request_floor(2)
@@ -123,7 +157,7 @@ def test_queued_trips_open_the_arrival_gate_before_departing(scene):
         controller.update()
         if controller.current_floor == 1:
             reached_first = True
-            if _joint_position(model, data, "joint_gate_f1") > 1.7 and open_since is None:
+            if min(_joint_position(model, data, f"joint_car_door_{s}") for s in ("front", "back")) > 0.63 and open_since is None:
                 open_since = data.time
             if controller.motion_active:
                 assert open_since is not None, "queued trip departed without opening the gate"
@@ -138,7 +172,7 @@ def test_queued_trips_open_the_arrival_gate_before_departing(scene):
 def test_middle_and_upward_trips_align_platform_with_payload(payload_mass):
     spec = mujoco.MjSpec.from_file(str(SCENE))
     if payload_mass:
-        payload = spec.worldbody.add_body(name="test_payload", pos=(4.15, -0.2, 5.8))
+        payload = spec.worldbody.add_body(name="test_payload", pos=(5.9, -0.2, 5.8))
         payload.add_joint(type=mujoco.mjtJoint.mjJNT_FREE)
         payload.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX, size=(0.2, 0.2, 0.1), mass=payload_mass)
     model = spec.compile()
@@ -170,7 +204,7 @@ def test_closed_landing_has_no_unprotected_rear_gap(scene):
     # mj_ray skips alpha-zero geoms; expose the collision boundary for probing.
     model.geom_rgba[model.geom("collision_right_back_f1").id, 3] = 1.0
     geom_id = np.array([-1], dtype=np.int32)
-    distance = mujoco.mj_ray(model, data, np.array([2.8, 1.2, 0.5]),
+    distance = mujoco.mj_ray(model, data, np.array([2.8, 1.6, 0.5]),
                              np.array([1., 0., 0.]), None, True, -1, geom_id)
     assert 0.0 < distance < 0.2
     assert model.geom(int(geom_id[0])).name == "collision_right_back_f1"
@@ -205,10 +239,9 @@ def test_light_button_toggles_its_lamp_once_until_released(scene):
     assert model.light_active[lamp1]
 
 
-def test_call_button_starts_a_rate_limited_trip_and_closes_open_gate(scene):
+def test_call_closes_both_car_doors_before_starting_lift(scene):
     model, data, controller = scene
     lift_actuator = _object_id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "lift_position")
-    gate3_actuator = _object_id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "gate_f3")
 
     _set_joint_position(model, data, "joint_call_up_f1", 0.020)
     controller.update()
@@ -217,8 +250,9 @@ def test_call_button_starts_a_rate_limited_trip_and_closes_open_gate(scene):
     assert controller.motion_active
     assert controller.doors_closing
     assert data.ctrl[lift_actuator] == pytest.approx(5.6)
-    assert data.ctrl[gate3_actuator] == pytest.approx(0.0)
-    assert _joint_position(model, data, "joint_gate_f3") == pytest.approx(1.8)
+    for side in ("front", "back"):
+        assert data.ctrl[model.actuator(f"car_door_{side}").id] == pytest.approx(0.0)
+        assert _joint_position(model, data, f"joint_car_door_{side}") == pytest.approx(0.65)
 
     for _ in range(100):
         mujoco.mj_step(model, data)
@@ -234,7 +268,7 @@ def test_floor_requests_are_deduplicated_and_served_in_order(scene):
     assert controller.pending_floors == (1, 2)
 
 
-def test_elevator_reaches_requested_floor_and_opens_only_that_gate(scene):
+def test_elevator_carries_closed_doors_then_opens_at_destination(scene):
     model, data, controller = scene
     controller.request_floor(1)
 
@@ -242,6 +276,9 @@ def test_elevator_reaches_requested_floor_and_opens_only_that_gate(scene):
         controller.apply_mouse_forces()
         mujoco.mj_step(model, data)
         controller.update()
+        if controller.motion_active and not controller.doors_closing:
+            for side in ("front", "back"):
+                assert _joint_position(model, data, f"joint_car_door_{side}") < 0.02
         if controller.current_floor == 1 and not controller.motion_active:
             break
 
@@ -250,14 +287,12 @@ def test_elevator_reaches_requested_floor_and_opens_only_that_gate(scene):
     for _ in range(2500):
         mujoco.mj_step(model, data)
         controller.update()
-        if (
-            _joint_position(model, data, "joint_gate_f1") > 1.7
-            and _joint_position(model, data, "joint_gate_f3") < 0.02
-        ):
+        if min(_joint_position(model, data, f"joint_car_door_{s}") for s in ("front", "back")) > 0.63:
             break
-    assert _joint_position(model, data, "joint_gate_f1") > 1.7
-    assert _joint_position(model, data, "joint_gate_f2") < 0.02
-    assert _joint_position(model, data, "joint_gate_f3") < 0.02
+    mujoco.mj_forward(model, data)
+    for side in ("front", "back"):
+        assert _joint_position(model, data, f"joint_car_door_{side}") > 0.63
+        assert data.geom_xpos[model.geom(f"geom_car_door_{side}").id, 2] == pytest.approx(1.12, abs=0.02)
 
 
 def _scene_with_test_pusher():
@@ -316,11 +351,11 @@ def test_mouse_press_uses_the_same_physical_button_and_event_path(scene):
     assert not model.light_active[lamp_id]
 
 
-@pytest.mark.parametrize("button,position", [
-    ("call_up_f1", (2.62, -0.95, 1.1)),
-    ("cab_f1", (4.90, -0.87, 6.7)),
+@pytest.mark.parametrize("button,position,force", [
+    ("call_up_f1", (4.25, 0.80, 1.1), (0, 25, 0)),
+    ("cab_f1", (6.65, -0.87, 6.7), (25, 0, 0)),
 ])
-def test_robot_side_contact_can_press_call_and_cabin_buttons(button, position):
+def test_robot_side_contact_can_press_call_and_cabin_buttons(button, position, force):
     spec = mujoco.MjSpec.from_file(str(SCENE))
     pusher = spec.worldbody.add_body(name="call_test_pusher", pos=position)
     pusher.add_joint(name="call_test_pusher_free", type=mujoco.mjtJoint.mjJNT_FREE)
@@ -339,7 +374,7 @@ def test_robot_side_contact_can_press_call_and_cabin_buttons(button, position):
     max_button_position = 0.0
 
     for _ in range(1000):
-        data.xfrc_applied[pusher_id, 0] = 25.0
+        data.xfrc_applied[pusher_id, :3] = force
         mujoco.mj_step(model, data)
         max_button_position = max(max_button_position, _joint_position(model, data, "joint_" + button))
         controller.update()
@@ -369,7 +404,7 @@ def test_mouse_picker_maps_selected_button_geom_to_its_logical_name(scene, monke
     selected_geom = _object_id(model, mujoco.mjtObj.mjOBJ_GEOM, "mark_cab_f2_a")
     assert pick_button(model, data, scene_stub, option, 16 / 9, 0.5, 0.5) == "cab_f2"
 
-    selected_geom = _object_id(model, mujoco.mjtObj.mjOBJ_GEOM, "geom_gate_f1")
+    selected_geom = _object_id(model, mujoco.mjtObj.mjOBJ_GEOM, "geom_car_door_front")
     assert pick_button(model, data, scene_stub, option, 16 / 9, 0.5, 0.5) is None
 
     def select_nothing(_model, _data, _option, _aspect, _relx, _rely, _scene, _point, geomid, _flexid, _skinid):
@@ -382,7 +417,7 @@ def test_mouse_picker_maps_selected_button_geom_to_its_logical_name(scene, monke
 
 def test_external_entry_button_calls_the_elevator_from_floor_one(scene):
     model, data, controller = scene
-    assert model.geom("entry_pad").size[0] >= 1.0
+    assert model.geom("entry_pad").size[0] >= 0.8
     controller.mouse_press("entry_call_up_f1")
     for _ in range(150):
         controller.apply_mouse_forces()

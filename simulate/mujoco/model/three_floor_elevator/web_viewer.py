@@ -34,7 +34,7 @@ button{cursor:pointer}#message{min-height:24px;color:#edc56d}small{color:#95a9b9
 <div class="bar"><span class="pill" id="lift">连接中…</span><span class="pill" id="lamps"></span><span class="pill" id="clock"></span></div>
 <canvas id="view" width="1280" height="720"></canvas>
 <p>左键点实体按钮；右键拖动旋转；滚轮缩放。黄色为墙上灯开关，绿色 ↑ / 红色 ↓ 为电梯呼叫，轿厢按钮标有 1、2、3。侧向按钮可旋转视角后点按。</p>
-<p id="message">电梯初始停在三层。一楼外部候梯平台也有上行呼叫按钮。</p></main>
+<p id="message">房间 → 本层候梯平台 → 电梯轿厢。轿厢离站前自动关门、停稳后自动开门；初始停在三层。</p></main>
 <script>
 const canvas=document.querySelector('#view'),ctx=canvas.getContext('2d'),message=document.querySelector('#message');
 async function post(path,body={}){

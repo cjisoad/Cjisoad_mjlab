@@ -8,7 +8,7 @@ import mujoco
 
 
 class ThreeFloorElevatorController:
-    """Read physical button travel and control lamps, lift, and landing gates."""
+    """Read physical button travel and control lamps, lift, and car doors."""
 
     FLOOR_Z = {1: 0.0, 2: 2.8, 3: 5.6}
     PRESS_THRESHOLD = 0.016
@@ -19,10 +19,10 @@ class ThreeFloorElevatorController:
     LIFT_SPEED = 1.5
     LIFT_POSITION_TOLERANCE = 0.02
     LIFT_VELOCITY_TOLERANCE = 0.03
-    GATE_POSITION_TOLERANCE = 0.02
-    GATE_VELOCITY_TOLERANCE = 0.03
-    GATE_CLOSED = 0.0
-    GATE_OPEN = 1.8
+    DOOR_POSITION_TOLERANCE = 0.02
+    DOOR_VELOCITY_TOLERANCE = 0.03
+    DOOR_CLOSED = 0.0
+    DOOR_OPEN = 0.65
     DOOR_DWELL = 2.0
 
     BUTTON_NAMES = (
@@ -71,21 +71,21 @@ class ThreeFloorElevatorController:
         self._lift_gravity_compensation = 0.0
         self._last_lift_gravity_compensation = 0.0
         self.lift_actuator_id = self._resolve(mujoco.mjtObj.mjOBJ_ACTUATOR, "lift_position")
-        self.gate_joint_ids = {
-            floor: self._resolve(mujoco.mjtObj.mjOBJ_JOINT, f"joint_gate_f{floor}")
-            for floor in self.FLOOR_Z
+        self.door_joint_ids = {
+            side: self._resolve(mujoco.mjtObj.mjOBJ_JOINT, f"joint_car_door_{side}")
+            for side in ("front", "back")
         }
-        self.gate_qposadr = {
-            floor: int(model.jnt_qposadr[joint_id])
-            for floor, joint_id in self.gate_joint_ids.items()
+        self.door_qposadr = {
+            side: int(model.jnt_qposadr[joint_id])
+            for side, joint_id in self.door_joint_ids.items()
         }
-        self.gate_dofadr = {
-            floor: int(model.jnt_dofadr[joint_id])
-            for floor, joint_id in self.gate_joint_ids.items()
+        self.door_dofadr = {
+            side: int(model.jnt_dofadr[joint_id])
+            for side, joint_id in self.door_joint_ids.items()
         }
-        self.gate_actuator_ids = {
-            floor: self._resolve(mujoco.mjtObj.mjOBJ_ACTUATOR, f"gate_f{floor}")
-            for floor in self.FLOOR_Z
+        self.door_actuator_ids = {
+            side: self._resolve(mujoco.mjtObj.mjOBJ_ACTUATOR, f"car_door_{side}")
+            for side in self.door_joint_ids
         }
         self.lamp_ids = {
             floor: self._resolve(mujoco.mjtObj.mjOBJ_LIGHT, f"lamp_f{floor}")
@@ -112,7 +112,7 @@ class ThreeFloorElevatorController:
         self.motion_active = False
         self.doors_closing = False
         self._motion_goal = self.FLOOR_Z[3]
-        self._gate_open_since: float | None = -self.DOOR_DWELL
+        self._door_open_since: float | None = -self.DOOR_DWELL
 
     def _resolve(self, object_type: mujoco.mjtObj, name: str) -> int:
         object_id = mujoco.mj_name2id(self.model, object_type, name)
@@ -140,10 +140,9 @@ class ThreeFloorElevatorController:
 
         self.data.qpos[self.lift_qposadr] = self.FLOOR_Z[3]
         self.data.ctrl[self.lift_actuator_id] = self.FLOOR_Z[3]
-        for floor, actuator_id in self.gate_actuator_ids.items():
-            gate_position = self.GATE_OPEN if floor == 3 else self.GATE_CLOSED
-            self.data.qpos[self.gate_qposadr[floor]] = gate_position
-            self.data.ctrl[actuator_id] = gate_position
+        for side, actuator_id in self.door_actuator_ids.items():
+            self.data.qpos[self.door_qposadr[side]] = self.DOOR_OPEN
+            self.data.ctrl[actuator_id] = self.DOOR_OPEN
         for floor, lamp_id in self.lamp_ids.items():
             self.model.light_active[lamp_id] = True
             self._set_lamp_emission(floor, True)
@@ -159,7 +158,7 @@ class ThreeFloorElevatorController:
         self.motion_active = False
         self.doors_closing = False
         self._motion_goal = self.FLOOR_Z[3]
-        self._gate_open_since = -self.DOOR_DWELL
+        self._door_open_since = -self.DOOR_DWELL
         mujoco.mj_forward(self.model, self.data)
         self._apply_lift_gravity_compensation()
         mujoco.mj_forward(self.model, self.data)
@@ -190,12 +189,12 @@ class ThreeFloorElevatorController:
             )
 
     def update(self) -> None:
-        """Read new presses, start queued trips, and advance lift/gate targets."""
+        """Read new presses, start queued trips, and advance lift/door targets."""
 
         self._apply_lift_gravity_compensation()
         self._read_button_edges()
         self._start_next_floor_if_idle()
-        self._update_motion_and_gates()
+        self._update_motion_and_doors()
 
     def _read_button_edges(self) -> None:
         now = float(self.data.time)
@@ -252,20 +251,25 @@ class ThreeFloorElevatorController:
         if self.motion_active:
             return
 
-        gate_position = self.data.qpos[self.gate_qposadr[self.current_floor]]
-        if gate_position < self.GATE_OPEN - 0.1:
-            self._gate_open_since = None
+        doors_open = all(
+            self.data.qpos[self.door_qposadr[side]] >= self.DOOR_OPEN - self.DOOR_POSITION_TOLERANCE
+            and abs(self.data.qvel[self.door_dofadr[side]]) <= self.DOOR_VELOCITY_TOLERANCE
+            for side in self.door_joint_ids
+        )
+        if not doors_open:
+            self._door_open_since = None
             return
-        if self._gate_open_since is None:
-            self._gate_open_since = float(self.data.time)
-        # Wait for a fully open gate and a boarding interval between trips.
-        if not self._pending or self.data.time - self._gate_open_since < self.DOOR_DWELL:
+        if self._door_open_since is None:
+            self._door_open_since = float(self.data.time)
+        # Wait for fully open doors and a boarding interval between trips.
+        if not self._pending or self.data.time - self._door_open_since < self.DOOR_DWELL:
             return
 
         floor = self._pending.popleft()
         if floor == self.current_floor:
             self.current_target = floor
-            self.data.ctrl[self.gate_actuator_ids[floor]] = self.GATE_OPEN
+            for actuator_id in self.door_actuator_ids.values():
+                self.data.ctrl[actuator_id] = self.DOOR_OPEN
             self._clear_floor_indicators(floor)
             return
 
@@ -273,10 +277,10 @@ class ThreeFloorElevatorController:
         self._motion_goal = self.FLOOR_Z[floor]
         self.motion_active = True
         self.doors_closing = True
-        for actuator_id in self.gate_actuator_ids.values():
-            self.data.ctrl[actuator_id] = self.GATE_CLOSED
+        for actuator_id in self.door_actuator_ids.values():
+            self.data.ctrl[actuator_id] = self.DOOR_CLOSED
 
-    def _update_motion_and_gates(self) -> None:
+    def _update_motion_and_doors(self) -> None:
         lift_position = float(self.data.qpos[self.lift_qposadr])
         lift_velocity = float(self.data.qvel[self.lift_dofadr])
 
@@ -285,13 +289,13 @@ class ThreeFloorElevatorController:
             return
 
         if self.doors_closing:
-            gates_closed = all(
-                self.data.qpos[self.gate_qposadr[floor]] <= self.GATE_POSITION_TOLERANCE
-                and abs(self.data.qvel[self.gate_dofadr[floor]]) <= self.GATE_VELOCITY_TOLERANCE
-                for floor in self.FLOOR_Z
+            doors_closed = all(
+                self.data.qpos[self.door_qposadr[side]] <= self.DOOR_POSITION_TOLERANCE
+                and abs(self.data.qvel[self.door_dofadr[side]]) <= self.DOOR_VELOCITY_TOLERANCE
+                for side in self.door_joint_ids
             )
             self.data.ctrl[self.lift_actuator_id] = self.FLOOR_Z[self.current_floor]
-            if not gates_closed:
+            if not doors_closed:
                 return
             self.doors_closing = False
 
@@ -303,8 +307,9 @@ class ThreeFloorElevatorController:
             self.motion_active = False
             self.doors_closing = False
             self.data.ctrl[self.lift_actuator_id] = self._motion_goal
-            self.data.ctrl[self.gate_actuator_ids[self.current_floor]] = self.GATE_OPEN
-            self._gate_open_since = None
+            for actuator_id in self.door_actuator_ids.values():
+                self.data.ctrl[actuator_id] = self.DOOR_OPEN
+            self._door_open_since = None
             self._clear_floor_indicators(self.current_floor)
             return
 
