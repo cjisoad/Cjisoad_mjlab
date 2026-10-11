@@ -1,0 +1,333 @@
+{
+  "status": "experimental_reference_v2_nominal_dynamic_pass_perturbed_entries_fail",
+  "reference": "outputs/transition_down_landing_revision_20261011/biped_to_tripod_reference_v2.npz",
+  "reference_sha256": "a806e849906846e66bf2421afad780132478a93f71c4b4f4a15300ae7b902646",
+  "provenance": [
+    "candidate_2.00_land0.72_knee0.052_com0.20_0.88.npz",
+    "physics_candidate04_verified.npz",
+    "biped_to_tripod_reference_v2.npz",
+    "physics_verified.npz"
+  ],
+  "physics_tests": {
+    "physics_verified": {
+      "reference_sha256": "a806e849906846e66bf2421afad780132478a93f71c4b4f4a15300ae7b902646",
+      "friction": 1.0,
+      "initial_vx_push": 0.0,
+      "simulated_until": 4.7,
+      "success": true,
+      "min_actual_knee_visual_clearance_m": 0.054140571737065664,
+      "min_actual_knee_collision_clearance_m": 0.05310131219885454,
+      "max_actual_joint_speed_rad_s": 6.101426167574603,
+      "max_actual_FR_joint_speed_rad_s": 1.41816677457491,
+      "max_actual_joint_torque_ratio": 1.0,
+      "max_root_tracking_error_m": 0.06190352342417126,
+      "final_contacts": [
+        true,
+        false,
+        true,
+        true
+      ],
+      "FR_contact_samples": 0,
+      "solver_failures": 3,
+      "nonfoot_contact_records": 0,
+      "first_nonfoot_contact": [],
+      "solver_failure_max_equality_residual": 2.842170943040401e-14
+    },
+    "physics_v2_mu06": {
+      "reference_sha256": "a806e849906846e66bf2421afad780132478a93f71c4b4f4a15300ae7b902646",
+      "friction": 0.6,
+      "initial_vx_push": 0.0,
+      "simulated_until": 4.7,
+      "success": true,
+      "min_actual_knee_visual_clearance_m": 0.0573246799352555,
+      "min_actual_knee_collision_clearance_m": 0.05644725525184545,
+      "max_actual_joint_speed_rad_s": 6.46664376232877,
+      "max_actual_FR_joint_speed_rad_s": 1.8824011574513713,
+      "max_actual_joint_torque_ratio": 1.0,
+      "max_root_tracking_error_m": 0.14021592348934914,
+      "final_contacts": [
+        true,
+        false,
+        true,
+        true
+      ],
+      "FR_contact_samples": 0,
+      "solver_failures": 1,
+      "nonfoot_contact_records": 0,
+      "first_nonfoot_contact": [],
+      "solver_failure_max_equality_residual": 9.547918011776346e-15
+    },
+    "physics_v2_push_forward": {
+      "reference_sha256": "a806e849906846e66bf2421afad780132478a93f71c4b4f4a15300ae7b902646",
+      "friction": 1.0,
+      "initial_vx_push": 0.03,
+      "simulated_until": 4.665,
+      "success": false,
+      "min_actual_knee_visual_clearance_m": -0.0076324256402569915,
+      "min_actual_knee_collision_clearance_m": -0.0053703841215231776,
+      "max_actual_joint_speed_rad_s": 60.009749714090425,
+      "max_actual_FR_joint_speed_rad_s": 25.59478927385038,
+      "max_actual_joint_torque_ratio": 1.0,
+      "max_root_tracking_error_m": 1.6675426979811099,
+      "final_contacts": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "FR_contact_samples": 28,
+      "solver_failures": 213,
+      "nonfoot_contact_records": 285,
+      "first_nonfoot_contact": [
+        {
+          "t": 1.19,
+          "nonfoot_floor": [
+            "Head_lower_collision"
+          ]
+        }
+      ],
+      "solver_failure_max_equality_residual": 1552.5808713377417
+    },
+    "physics_v2_push_backward": {
+      "reference_sha256": "a806e849906846e66bf2421afad780132478a93f71c4b4f4a15300ae7b902646",
+      "friction": 1.0,
+      "initial_vx_push": -0.03,
+      "simulated_until": 1.28,
+      "success": false,
+      "min_actual_knee_visual_clearance_m": -0.008563911035499555,
+      "min_actual_knee_collision_clearance_m": -0.0023559905185630958,
+      "max_actual_joint_speed_rad_s": 32.2768025047417,
+      "max_actual_FR_joint_speed_rad_s": 32.2768025047417,
+      "max_actual_joint_torque_ratio": 1.0,
+      "max_root_tracking_error_m": 0.5087476122190615,
+      "final_contacts": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "FR_contact_samples": 0,
+      "solver_failures": 9,
+      "nonfoot_contact_records": 6,
+      "first_nonfoot_contact": [
+        {
+          "t": 1.26,
+          "nonfoot_floor": [
+            "RR_calf_collision"
+          ]
+        }
+      ],
+      "solver_failure_max_equality_residual": 168.11619196290144
+    }
+  },
+  "all_knees": {
+    "original": {
+      "path": "outputs/biped_to_tripod_preparation_20261010/biped_to_tripod_reference.npz",
+      "duration_s": 7.0,
+      "all_knee_shell_min_m": 0.0219982720192245,
+      "knee_shell_min_m_by_leg": {
+        "FL": 0.06318314851326251,
+        "FR": 0.1764421200598268,
+        "RL": 0.0219982720192245,
+        "RR": 0.021998483553704505
+      },
+      "sampled_time_below_40mm_s": 3.64,
+      "FL_contact_time_s": 5.0,
+      "COM_forward_20mm_relative_rear_feet_time_s": 5.5,
+      "COM_relative_rear_feet_x_initial_min_final_m": [
+        -0.00023051263227354818,
+        -0.00023051267288729319,
+        0.09890172510021268
+      ],
+      "COM_world_x_initial_min_final_m": [
+        0.011180206886888568,
+        0.01118020685981545,
+        0.11023574933118371
+      ],
+      "measurement": "all thigh visual mesh vertices and calf vertices within 0.12m of knee; lowest surface z"
+    },
+    "reference_v2": {
+      "path": "outputs/transition_down_landing_revision_20261011/biped_to_tripod_reference_v2.npz",
+      "duration_s": 3.7,
+      "all_knee_shell_min_m": 0.05091781838577607,
+      "knee_shell_min_m_by_leg": {
+        "FL": 0.0708800138456853,
+        "FR": 0.20044919103539266,
+        "RL": 0.05118764971867189,
+        "RR": 0.05091781838577607
+      },
+      "sampled_time_below_40mm_s": 0.0,
+      "FL_contact_time_s": 1.6600000000000001,
+      "COM_forward_20mm_relative_rear_feet_time_s": 1.3800000000000001,
+      "COM_relative_rear_feet_x_initial_min_final_m": [
+        -0.00023051263227354818,
+        -0.00023051263227354818,
+        0.1161856883947909
+      ],
+      "COM_world_x_initial_min_final_m": [
+        0.011180206886888568,
+        0.008313440368095285,
+        0.10968370651705327
+      ],
+      "measurement": "all thigh visual mesh vertices and calf vertices within 0.12m of knee; lowest surface z"
+    },
+    "measured_physics": {
+      "path": "outputs/transition_down_landing_revision_20261011/physics_verified.npz",
+      "duration_s": 4.7,
+      "all_knee_shell_min_m": 0.054140571737065664,
+      "knee_shell_min_m_by_leg": {
+        "FL": 0.06618396887559767,
+        "FR": 0.1893226655399673,
+        "RL": 0.05516923183366121,
+        "RR": 0.054140571737065664
+      },
+      "sampled_time_below_40mm_s": 0.0,
+      "FL_contact_time_s": 1.585,
+      "COM_forward_20mm_relative_rear_feet_time_s": 1.28,
+      "COM_relative_rear_feet_x_initial_min_final_m": [
+        -0.00023051263227354818,
+        -0.0002472459706477862,
+        0.13182888609551535
+      ],
+      "COM_world_x_initial_min_final_m": [
+        0.011180206886888568,
+        0.011180206886888568,
+        0.10937899393927467
+      ],
+      "measurement": "all thigh visual mesh vertices and calf vertices within 0.12m of knee; lowest surface z"
+    }
+  },
+  "versions": {
+    "numpy": "2.4.6",
+    "scipy": "1.17.1",
+    "mujoco": "3.5.0",
+    "mujoco-warp": "3.5.0",
+    "torch": "2.14.0"
+  },
+  "python": "3.11.16",
+  "invalid_policy_probe_results_excluded": true,
+  "retrained_policy": false,
+  "files_sha256": {
+    "outputs/biped_to_tripod_preparation_20261010/biped_to_tripod_reference.npz": "fa49119da56b0eb2ac2dc49d5b65dfe310aad8033a5e15565ba5079872bb11aa",
+    "outputs/teacher_endpoint_rise_clearance20mm_20261008/generate.py": "0b852301250248ea29c4f97e830c73fe175bb8d389c7f76b2a42d794a5532f4f",
+    "src/tasks/pedipulation_transition_t/motion.py": "34eeecf4dea1203459b9bb01bd0fe8f051d4eadd7dfc070c7bcfb92d57da46c5",
+    "src/tasks/pedipulation/robot.py": "9e7bd95996fd2f4964ee3fd9b2feecc55e74207afff3351ebe46bf6dff83b40c",
+    "src/tasks/pedipulation/constants.py": "078d86f03223b46747e49a7fd74da1f49f2b25e04746174653d278346fd925db",
+    "src/tasks/transition_t/motion.py": "d67591a88d51f9c862c7e0276894a9421bb632aacb038b528722ed1abfc75b47",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate04_push_forward.npz": "86c846ae49a570f3418867fd87994dc2587a1c7ae0558e3f8f47a67e5f234fc7",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate04_verified.json": "af7c590c89a6a1f7334cad3c88b3ac2a04fabffdab0b8677c86108d71e0e6505",
+    "outputs/transition_down_landing_revision_20261011/viewer_verification.json": "5e51e5160958bc07dbe4a835fbcaf6000428176b83b9775ca7eb685dae3e0ef7",
+    "outputs/transition_down_landing_revision_20261011/candidate_2.50_land0.72_knee0.052_com0.20_0.88.json": "c6f41262856fbd2da525441e259ad0d432c0b6936622672a6bb89399b4ce46d5",
+    "outputs/transition_down_landing_revision_20261011/physics_verified.npz": "c5223b57f3a29b3ed6437e87ddd00c20282c0d20845ac2f97a2aa9980a6b432d",
+    "outputs/transition_down_landing_revision_20261011/PLAN.md": "878aeae5a2989079dcaecfffd5ac63384df337a35b536356750cb3fdbca406a7",
+    "outputs/transition_down_landing_revision_20261011/replay_wbc2.py": "d91bbf00ca1bddca400136f45386ba2ea7ee48f72c2ecfcd40ab4ed231087c94",
+    "outputs/transition_down_landing_revision_20261011/candidate_2.20_land0.62_knee0.052_com0.18_0.80.npz": "01122c00048dfdb3dffedae2cebab755bb9fac1751c0379cfd54ea0606c686dd",
+    "outputs/transition_down_landing_revision_20261011/physics_original_wbc.npz": "1febf68e0b7427a5649e95dd71edcdae20b477359726d172effc448ee7157bb4",
+    "outputs/transition_down_landing_revision_20261011/physics_refined_nominal.json": "18de4ede27997af305055e84aba932263e1b6b9706c16ef16468671151578065",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate06.npz": "884b3694a084adebd84fd0b0d08a3071903ce7a277da28cb70409afaf5a92b20",
+    "outputs/transition_down_landing_revision_20261011/physics_refined_mu06.json": "8e165353251b8f0ac66d2902a7a66e87eb04cf265f264bc948f6da0b03ef340b",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate04_wbc2.npz": "1c7efae63b2a41321930269250ed543dcb061c0ecc69006ba421aa212b061c3c",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate07.json": "c025defc8b132add4190f49d1eacc78885649ad1159c20412e158569ca2f7904",
+    "outputs/transition_down_landing_revision_20261011/verify.py": "2606b9fc17ecf92fb27fe482f8042d54fa421b6a59f119320976fd59245e93d7",
+    "outputs/transition_down_landing_revision_20261011/candidate_2.00_land0.72_knee0.052_com0.20_0.88.json": "c792442d25cbbe54743c9b2e7875fe58335e057f261e64089e7d3f029934b02f",
+    "outputs/transition_down_landing_revision_20261011/replay_v1_failed.py": "cb1c98ccec2459db9516b515f395665e8b1880e6b3fb321f82151d92d26d32a0",
+    "outputs/transition_down_landing_revision_20261011/generate_selected.py": "6b1a2811b19c925ffc9081dc87082f3586f214b777b4bfa268f381e6a12b7b65",
+    "outputs/transition_down_landing_revision_20261011/candidate_2.20_land0.68_knee0.052_com0.25_0.85.npz": "91642442b4b0b5637676905be755ec323a5b2892e50c44805827f08225822f37",
+    "outputs/transition_down_landing_revision_20261011/policy_original.json": "ee4e387078df4e2c55fe40a96e0504a7c7eeb089b354fa7ff5c0547c5dd7f512",
+    "outputs/transition_down_landing_revision_20261011/candidate_2.00_land0.72_knee0.075_com0.20_0.88.npz": "a72636ac6d0210798d35ea13bfd08dc7117f9db82f426cf64020694128029940",
+    "outputs/transition_down_landing_revision_20261011/README.md": "e25858bc6c5ef4a44e6e6e79fcf0df988abfb55989c241f0ff380073ec35d80d",
+    "outputs/transition_down_landing_revision_20261011/policy_candidate01_rerun.npz": "22948d782cc49087c770465fa501424838d75691cc25ca49bad000ba7252861a",
+    "outputs/transition_down_landing_revision_20261011/physics_v2_mu06.json": "a2d97ef2809b982f6a0610bb71059a20fc1d27dd88294ec9b57f553c5285b908",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate01_pd.json": "eee9e558f85cd2fa94d3638bd1d9b58adc7540f60f10b34b8900fe49e671677d",
+    "outputs/transition_down_landing_revision_20261011/physics_original_pd.json": "fe35b4af79c67945340af2c656d50cdb3cb607bba0851cc0854baaae46333875",
+    "outputs/transition_down_landing_revision_20261011/biped_to_tripod_physics_refined.npz": "a806e849906846e66bf2421afad780132478a93f71c4b4f4a15300ae7b902646",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate02_wbc2.npz": "73f339729c0b08f82637084e624fd6cb29ae3b6314daaeaa7edb0f3b2616f762",
+    "outputs/transition_down_landing_revision_20261011/candidate_3.00_land0.60_knee0.052_com0.58_0.95.json": "0aaf7d0b416fcb2d40b5d66e20206483258545bf8a61cd58fdc2d3648e516b86",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate01.npz": "e4c42df527b4de2a64a5496a3a84c2f481fb4170d6d879644421589c3ea77962",
+    "outputs/transition_down_landing_revision_20261011/replay.py": "c0cb3082bb6df3d8b70f86d3853ca60cd3ab4287711771fdc55a78893ec5b9da",
+    "outputs/transition_down_landing_revision_20261011/physics_refined_nominal.npz": "c5223b57f3a29b3ed6437e87ddd00c20282c0d20845ac2f97a2aa9980a6b432d",
+    "outputs/transition_down_landing_revision_20261011/physics_refined_mu06.npz": "8d79011c4805323e4f84c0b355db0fdf9014dfc00f1995237dc9425e202af31c",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate04_verified.npz": "dbe7a8243027f5ad8a4f7997ee217bdf191ba643f6faf4806f01ae55a1cb636f",
+    "outputs/transition_down_landing_revision_20261011/view.py": "157184494a73818557deadfab7832e9a6f116c4cfa7cb00e7f8c2dc167940d8b",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate04_push_forward.json": "7e026214b498a9bb70578c0aa065b0d0808fc6cfcadcb83917fe9a76e1b568b4",
+    "outputs/transition_down_landing_revision_20261011/physics_v2_push_forward.json": "5f4c76deddf7359945370a4b33534f29bdfb97e26d6895131dace2da8bc7bd79",
+    "outputs/transition_down_landing_revision_20261011/policy_original_probe2.npz": "20046e25a71dbee19a1f2bfd1f7b18f6b3cdaa9d055d44e0a17daa50bda2f8fe",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate01_wbc2.json": "19210a0dd250d87d3c65b44ae139343a3f367640c23705b67209a1787b1cd1e9",
+    "outputs/transition_down_landing_revision_20261011/physics_original_wbc.json": "986c3d07c40b8f4aacbe2799da4955b5aaf617510e26180b94670d19ef7def0f",
+    "outputs/transition_down_landing_revision_20261011/policy_probe.py": "c7bcd521db0644cd0df60758845f35a27553e524625b910a13358bfe2072146e",
+    "outputs/transition_down_landing_revision_20261011/baseline_existing_evaluator.json": "8491fc1d661e9af549c7daa4c054fb4a691fbe4b51782417fd37e7a0463a8159",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate04_mu06.npz": "e0ea55aa57eec62d769b0f58e2c2d39ef5c2247fa6e9899b5dcb9d346ca7db9e",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate07.npz": "741f48dbeb95069986a2ca6dc3cae31f7f7532af7c00d3118d347bfd39938c38",
+    "outputs/transition_down_landing_revision_20261011/physics_refined_push_backward.npz": "9a71148d8f5f1763c102811eaeb3664cb392a43c5c437b726dcc0686e71d7955",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate04_mu06.json": "13e1f0e418d5dab8e8b688b7b350bf7b15357b7b54ff2e3aa361dab83151288a",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate04_barrier.npz": "a3a9023047c838208a3bbd18be2dbd7ddee90fa5baf327d23d94b9556772d95d",
+    "outputs/transition_down_landing_revision_20261011/candidate_2.00_land0.72_knee0.075_com0.20_0.88.json": "979eb583ed5a1b9121d70dd1e81e1a7d6e419b7e7a8568d5c9b7ac30596f914a",
+    "outputs/transition_down_landing_revision_20261011/all_knees_audit.json": "89a70317b86827694f39aba6fb5c535d08d80d2ffbe0638762ad2ec07ddcec0f",
+    "outputs/transition_down_landing_revision_20261011/candidate_2.50_land0.72_knee0.052_com0.20_0.88.npz": "27e053ec03108072d8bbcfb9229a1c5627d84465ba3a8c68dc6ccb278034a767",
+    "outputs/transition_down_landing_revision_20261011/candidate_2.20_land0.68_knee0.052_com0.25_0.85.json": "0ce9b3831e48a39a95bf0a976446372ba3372a2ab89a59f88fd0ac5f44b1507f",
+    "outputs/transition_down_landing_revision_20261011/policy_probe_v1_diagnostic.py": "98d9ef678d75d0b109dfb6e803c29a4ea35f145e0ef66b634f6d738b76aecc06",
+    "outputs/transition_down_landing_revision_20261011/refine_from_physics.py": "cbb1352145517147b28888d22dc0621ddac8b83056be33bca054b67d1542334f",
+    "outputs/transition_down_landing_revision_20261011/physics_final_fresh.json": "f0a8340f225f7fcfecf5b3027202b3d286a31c6c469fd745c561c7da8cd8a7fc",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate04_barrier.json": "148476bcd61d5546bdeb0b088e005b4d7b9f3c3c0b10c6310d1353656582c201",
+    "outputs/transition_down_landing_revision_20261011/physics_verified.json": "1f702374337924efcdfb63e9fde357f737fe7314d7bac80732008bd96829b9c1",
+    "outputs/transition_down_landing_revision_20261011/policy_original_probe2.json": "ee4e387078df4e2c55fe40a96e0504a7c7eeb089b354fa7ff5c0547c5dd7f512",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate04_push_backward.npz": "1ba637aae23acaec894fcbcd52cc934eb67ef8b689a4a2144cfccc800900a672",
+    "outputs/transition_down_landing_revision_20261011/landing_comparison.png": "ecd60892141cbb3bf190b0c3ebf88696567bc89ca5b8b2292409b9d1c787514c",
+    "outputs/transition_down_landing_revision_20261011/physics_final_fresh.npz": "c5223b57f3a29b3ed6437e87ddd00c20282c0d20845ac2f97a2aa9980a6b432d",
+    "outputs/transition_down_landing_revision_20261011/biped_to_tripod_physics_refined.json": "17592c06d61eef42eb130fa48da4e85199cebd1bd268f00d25be1f57d27f7f5d",
+    "outputs/transition_down_landing_revision_20261011/physics_v2_mu06.npz": "8d79011c4805323e4f84c0b355db0fdf9014dfc00f1995237dc9425e202af31c",
+    "outputs/transition_down_landing_revision_20261011/policy_candidate01_rerun.json": "122e2e2267cc8f0f34f05ba81388f65a81aa7fd0e4a56bc6c572e98ad99a0182",
+    "outputs/transition_down_landing_revision_20261011/physics_refined_push_forward.json": "1fce1115022cf638c6a2b1af00894c43825bcb0902ca6bd2f83ad492ebf3258c",
+    "outputs/transition_down_landing_revision_20261011/candidate_3.00_land0.72_knee0.052_com0.20_0.88.json": "d04f30a08c50edab046ec4b546aa24f6b204f866de0d91e25031eb95afa65f50",
+    "outputs/transition_down_landing_revision_20261011/biped_to_tripod_reference_v2.npz": "a806e849906846e66bf2421afad780132478a93f71c4b4f4a15300ae7b902646",
+    "outputs/transition_down_landing_revision_20261011/physics_v2_push_forward.npz": "8d30b05e08caf2c354d45adf82a8235506651ce6b59ed005e7e553f044d333fd",
+    "outputs/transition_down_landing_revision_20261011/policy_candidate02.npz": "e809a0d622918746485450037f8229c6a3ac2979398e5a077cf208bf219f7248",
+    "outputs/transition_down_landing_revision_20261011/candidate_2.00_land0.72_knee0.052_com0.20_0.88.npz": "b61f50132ae1feb6c491bde156751da56d5ba3db94ff7b2dcccc0035592225e0",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate04_wbc2.json": "7d4c0c9a213996681370864508f646ece1c7a0fd6b7c6de9f02b88660845ea9a",
+    "outputs/transition_down_landing_revision_20261011/physics_refined_push_backward.json": "a9026128772fd496c9a128f6353b20d4f4c0aecefae89e2ffb25035106144a9b",
+    "outputs/transition_down_landing_revision_20261011/candidate_3.00_land0.72_knee0.052_com0.20_0.88.npz": "16ab6ef50d4878e98127fa9cbffea78b4b4acafadbed5a7dd8f947177177110a",
+    "outputs/transition_down_landing_revision_20261011/physics_refined_push_forward.npz": "8d30b05e08caf2c354d45adf82a8235506651ce6b59ed005e7e553f044d333fd",
+    "outputs/transition_down_landing_revision_20261011/reference_v2_audit.json": "17592c06d61eef42eb130fa48da4e85199cebd1bd268f00d25be1f57d27f7f5d",
+    "outputs/transition_down_landing_revision_20261011/replay_wbc2_debug.py": "708b22a7178fcc5b4094b19909e0898c5a9aa44f433cb8ab95b85ada2ca4a883",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate01_pd.npz": "a3f5bf258612acef73632f042eb87226dad9deb038b3e1291df62909e6240c38",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate04_push_backward.json": "236d1002dd4f8f618654916d4baa1b72b7a5ee7cd14d0ceb89edc31093a36646",
+    "outputs/transition_down_landing_revision_20261011/candidate_3.00_land0.60_knee0.052_com0.58_0.95.npz": "f2a8e6a4fb5377a16b6be6f80d90c4a18984f480d8692dc214dd5aa9faa88715",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate06.json": "fdce7145f56710658d602566e9f1df29ba7d862af6a5eef62e3f3e2d127631f8",
+    "outputs/transition_down_landing_revision_20261011/physics_v2_push_backward.json": "db6c485e3b8646be4890419d7aa2924ee6c6ef138911dcbe1c9d6beff39bd15e",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate03_wbc2.json": "e10d2cf19bc1827b0c28072919d01aeed428330c5095922f3bab5a33154850a9",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate01_wbc2.npz": "9aa18525b24484f137d05711ddaa4f1ccebd98383bb91e57d868019e4ac05d85",
+    "outputs/transition_down_landing_revision_20261011/replay_barrier_initial.py": "1e15f420ab51b7d28dfb7c4112ab7d7226052ebaa97342f651130527781991ef",
+    "outputs/transition_down_landing_revision_20261011/physics_original_pd.npz": "6236c907f4be77213e5429893045ec4b1e0dff2453033399900970e5db3b77a9",
+    "outputs/transition_down_landing_revision_20261011/policy_candidate02.json": "21f6ba728903901a47c509c7cbe8a8667c181e33d8a4bc701ba89a7bab53c859",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate01.json": "fdc810f7b7c6ef77255b268be44d0df9ed53c3cf98eed004e4a13cccde4dfb9c",
+    "outputs/transition_down_landing_revision_20261011/physics_v2_push_backward.npz": "9a71148d8f5f1763c102811eaeb3664cb392a43c5c437b726dcc0686e71d7955",
+    "outputs/transition_down_landing_revision_20261011/generate.py": "60f45797dfe5e18a8770b11d43988691df18002215b72bad6ba4891ed41b169b",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate03_wbc2.npz": "187b21401e80082e0914f570eaf81982d1492bb834ccaed6456e906fb5530357",
+    "outputs/transition_down_landing_revision_20261011/policy_original.npz": "20046e25a71dbee19a1f2bfd1f7b18f6b3cdaa9d055d44e0a17daa50bda2f8fe",
+    "outputs/transition_down_landing_revision_20261011/physics_candidate02_wbc2.json": "9c897395994d0393be5fbf6191337dc5c1639f1e907ab2b6c633c20e50a00ac1",
+    "outputs/transition_down_landing_revision_20261011/verification.json": "92bd8e898794180e0a20cc978edce6c4d6c6893b96aba9c2620e00061cde9ac9",
+    "outputs/transition_down_landing_revision_20261011/audit_knees.py": "96b969fc69610c9aabde09a737ee91aa1a95ebd9ba516934c1e30579b7b38b54",
+    "outputs/transition_down_landing_revision_20261011/candidate_2.20_land0.62_knee0.052_com0.18_0.80.json": "adad50b7c7b863dfbf5e30a53614f468d3e717f11c95c0af79260358fe78014f",
+    "src/tasks/pedipulation/source_physics.json": "c45dbc763bbbac4703b9cfa57e0d332bb234b0230b1ecde43da69cb353ab2b0c",
+    "src/assets/robots/unitree_go2/go2_constants.py": "c1406f6e469b8b6bb24bb7f9b122612c74cec412a8b9b5d9cddf64e37fb19a0f",
+    "src/assets/robots/unitree_go2/__init__.py": "d52bb3e1a2f7acf191ee18c78b421c7a7e8da63379db8224e08900526b8653f5",
+    "src/assets/robots/unitree_go2/xmls/scene_go2.xml": "97c7ece37cb37666f2767abb4449c3a8a6a2a0e90716d14940e09423f5d426ef",
+    "src/assets/robots/unitree_go2/xmls/go2.xml": "077fc7f70ce2ddcfdab814aa0800efa2c974db6c98594b2f7663f779509fb912",
+    "src/assets/robots/unitree_go2/xmls/assets/foot.obj": "df9e78a7c0110d02557439010f2a5f11f0ec4fd907b32704145dbd6aa7affc0b",
+    "src/assets/robots/unitree_go2/xmls/assets/base_1.obj": "39d2f4724ff64dd5a0640c308fd98902a2946660a8d033ec8dbf368fd5af0dd6",
+    "src/assets/robots/unitree_go2/xmls/assets/base_3.obj": "f51ba43bf300e68957a0c1aa83eaf3e4926f4ac7e64a0d6c33ae5d21fcbcf5f6",
+    "src/assets/robots/unitree_go2/xmls/assets/thigh_0.obj": "bb3edfe6a7b04f4f4dff1ce7b05d426ddce941e276cc6372fb542055893c71ec",
+    "src/assets/robots/unitree_go2/xmls/assets/hip_1.obj": "3fd5bd9b2ef6abe622c0739d3c67eaa1679b19b47132951972c4892a779ea7cf",
+    "src/assets/robots/unitree_go2/xmls/assets/hip_0.obj": "cc29932ab4d251ce3f72389ec4c1f757e44eee138b87e772b648c2bc76b506cd",
+    "src/assets/robots/unitree_go2/xmls/assets/base_0.obj": "8cdc53719002a5ee737d867904e534a6d6fa930b616bdcc1b3131e577d4e46c0",
+    "src/assets/robots/unitree_go2/xmls/assets/calf_1.obj": "51950c3a153ae3208592df86ea11c9d6756f8f645ebca5caf6910c61aeb03817",
+    "src/assets/robots/unitree_go2/xmls/assets/calf_0.obj": "4a818cd563c5b7e2a271504442d05fd777d38cbaa028d4a10ad29c9f87bb355e",
+    "src/assets/robots/unitree_go2/xmls/assets/calf_mirror_1.obj": "f84f5af90b914633165beb3a5493ee499169144c5797dcf04c6eb5842f74b31a",
+    "src/assets/robots/unitree_go2/xmls/assets/calf_mirror_0.obj": "6dc0406207a1c08a5953fd5962aca1a270fd06593d30d100205e05c1b32d4af2",
+    "src/assets/robots/unitree_go2/xmls/assets/base_4.obj": "49ddec0129546e5dd2075d5beacf7f207baa2860aeff7626818e64d2efbf3821",
+    "src/assets/robots/unitree_go2/xmls/assets/thigh_mirror_1.obj": "db984a3e983eabbc9b38183427cca9ab0bb3bdb049f9eab030e06edda36579d6",
+    "src/assets/robots/unitree_go2/xmls/assets/base_2.obj": "29cae463f95d678e4ede863c36c9b19b0d356b8340412add10670d70bdcc3095",
+    "src/assets/robots/unitree_go2/xmls/assets/thigh_mirror_0.obj": "07abaedce761f1dd48647384ac14ba1959276bc78d5a2a62051e8f1c6093933b",
+    "src/assets/robots/unitree_go2/xmls/assets/thigh_1.obj": "3a631822f9f7d2114b1b79dcdff5abf95103630abb7d91d1f3b8b18117132ed2"
+  }
+}

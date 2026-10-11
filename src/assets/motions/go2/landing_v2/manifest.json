@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "motion_sha256": "a806e849906846e66bf2421afad780132478a93f71c4b4f4a15300ae7b902646",
+  "bank_sha256": "2c2b4c96d7dc4eb47a16e29ac1f37411036abf629dd84cf1747c62b2e7e112df",
+  "source_bank_sha256": "ff962e464cd928e44dea76f60363867f5361a45564ad7adbd6a43632d7193058",
+  "split_trajectories": {
+    "train": 512,
+    "validation": 64,
+    "final": 64
+  },
+  "FR_error_recompute_max_delta_m": 2.65222578787333e-06,
+  "max_observed_speed_m_s": 1.0793572664260864,
+  "max_observed_FR_error_m": 0.13051164703023813,
+  "state_history_fields_preserved": [
+    "root_state",
+    "joint_pos",
+    "joint_vel",
+    "raw_action",
+    "previous_action",
+    "manager_actions",
+    "previous_joint_vel",
+    "limiter_position",
+    "limiter_velocity",
+    "fr_offset",
+    "command",
+    "trajectory_id"
+  ],
+  "reference_provenance": "src/assets/motions/go2/landing_v2/reference_provenance.md"
+}

@@ -1,0 +1,77 @@
+{
+  "original": {
+    "path": "outputs/biped_to_tripod_preparation_20261010/biped_to_tripod_reference.npz",
+    "duration_s": 7.0,
+    "all_knee_shell_min_m": 0.0219982720192245,
+    "knee_shell_min_m_by_leg": {
+      "FL": 0.06318314851326251,
+      "FR": 0.1764421200598268,
+      "RL": 0.0219982720192245,
+      "RR": 0.021998483553704505
+    },
+    "sampled_time_below_40mm_s": 3.64,
+    "FL_contact_time_s": 5.0,
+    "COM_forward_20mm_relative_rear_feet_time_s": 5.5,
+    "COM_relative_rear_feet_x_initial_min_final_m": [
+      -0.00023051263227354818,
+      -0.00023051267288729319,
+      0.09890172510021268
+    ],
+    "COM_world_x_initial_min_final_m": [
+      0.011180206886888568,
+      0.01118020685981545,
+      0.11023574933118371
+    ],
+    "measurement": "all thigh visual mesh vertices and calf vertices within 0.12m of knee; lowest surface z"
+  },
+  "reference_v2": {
+    "path": "outputs/transition_down_landing_revision_20261011/biped_to_tripod_reference_v2.npz",
+    "duration_s": 3.7,
+    "all_knee_shell_min_m": 0.05091781838577607,
+    "knee_shell_min_m_by_leg": {
+      "FL": 0.0708800138456853,
+      "FR": 0.20044919103539266,
+      "RL": 0.05118764971867189,
+      "RR": 0.05091781838577607
+    },
+    "sampled_time_below_40mm_s": 0.0,
+    "FL_contact_time_s": 1.6600000000000001,
+    "COM_forward_20mm_relative_rear_feet_time_s": 1.3800000000000001,
+    "COM_relative_rear_feet_x_initial_min_final_m": [
+      -0.00023051263227354818,
+      -0.00023051263227354818,
+      0.1161856883947909
+    ],
+    "COM_world_x_initial_min_final_m": [
+      0.011180206886888568,
+      0.008313440368095285,
+      0.10968370651705327
+    ],
+    "measurement": "all thigh visual mesh vertices and calf vertices within 0.12m of knee; lowest surface z"
+  },
+  "measured_physics": {
+    "path": "outputs/transition_down_landing_revision_20261011/physics_verified.npz",
+    "duration_s": 4.7,
+    "all_knee_shell_min_m": 0.054140571737065664,
+    "knee_shell_min_m_by_leg": {
+      "FL": 0.06618396887559767,
+      "FR": 0.1893226655399673,
+      "RL": 0.05516923183366121,
+      "RR": 0.054140571737065664
+    },
+    "sampled_time_below_40mm_s": 0.0,
+    "FL_contact_time_s": 1.585,
+    "COM_forward_20mm_relative_rear_feet_time_s": 1.28,
+    "COM_relative_rear_feet_x_initial_min_final_m": [
+      -0.00023051263227354818,
+      -0.0002472459706477862,
+      0.13182888609551535
+    ],
+    "COM_world_x_initial_min_final_m": [
+      0.011180206886888568,
+      0.011180206886888568,
+      0.10937899393927467
+    ],
+    "measurement": "all thigh visual mesh vertices and calf vertices within 0.12m of knee; lowest surface z"
+  }
+}

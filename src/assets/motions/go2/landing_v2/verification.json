@@ -1,0 +1,13 @@
+{
+  "verified": true,
+  "reference_sha256": "a806e849906846e66bf2421afad780132478a93f71c4b4f4a15300ae7b902646",
+  "frames": 186,
+  "duration_s": 3.7,
+  "reference_knee_min_m": 0.05091781838577607,
+  "actual_knee_min_m": 0.054140571737065664,
+  "actual_samples": 941,
+  "actual_physics_dt": 0.005,
+  "original_reference_preserved": true,
+  "nominal_physics_verified": true,
+  "robust_entry_policy_verified": false
+}

@@ -1,0 +1,60 @@
+{
+  "reference": "/home/eden/unitree_rl_mjlab/outputs/transition_down_landing_revision_20261011/biped_to_tripod_reference_v2.npz",
+  "reference_sha256": "a806e849906846e66bf2421afad780132478a93f71c4b4f4a15300ae7b902646",
+  "controller": "wbc",
+  "physical_simulation": true,
+  "state_writes": "qpos/qvel only at initial reset; after that joint torques and mj_step",
+  "root_external_force_used": false,
+  "kp": 40.0,
+  "kd": 1.0,
+  "initial_vx_push": 0.0,
+  "friction": 1.0,
+  "duration_requested": 4.7,
+  "simulated_until": 4.7,
+  "physics_dt": 0.005,
+  "wall_seconds": 4.32473349099746,
+  "min_actual_knee_visual_clearance_m": 0.054140571737065664,
+  "min_actual_knee_collision_clearance_m": 0.05310131219885454,
+  "max_actual_joint_speed_rad_s": 6.101426167574603,
+  "max_actual_FR_joint_speed_rad_s": 1.41816677457491,
+  "max_actual_joint_torque_ratio": 1.0,
+  "nonfoot_floor_contacts": [],
+  "solver_failures": 3,
+  "solver_failure_details": [
+    {
+      "time": 1.76,
+      "message": "Iteration limit reached",
+      "equality_residual": 2.842170943040401e-14,
+      "torque_violation": 0.0,
+      "knee_violation": 0.0
+    },
+    {
+      "time": 1.7650000000000001,
+      "message": "Iteration limit reached",
+      "equality_residual": 1.4433766681865023e-14,
+      "torque_violation": 0.0,
+      "knee_violation": 0.0
+    },
+    {
+      "time": 1.77,
+      "message": "Iteration limit reached",
+      "equality_residual": 2.0777650433512207e-15,
+      "torque_violation": 0.0,
+      "knee_violation": 0.0
+    }
+  ],
+  "solver_iterations_mean": 14.20403825717322,
+  "max_root_tracking_error_m": 0.06190352342417126,
+  "final_root_tracking_error_m": 0.0010565791571934598,
+  "final_orientation_tracking_error_rad": 0.008241701210779698,
+  "final_joint_tracking_error_norm": 0.1902700862655464,
+  "final_contacts": [
+    true,
+    false,
+    true,
+    true
+  ],
+  "FR_contact_samples": 0,
+  "end_root_height": 0.299352293315987,
+  "success": true
+}

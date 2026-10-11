@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "nominal_rate": 0.9,
+  "probe_rate": 0.85,
+  "entry_rate": 0.85,
+  "final_rate": 0.9,
+  "final_nominal_rate": 0.95,
+  "consecutive_windows": 2,
+  "nominal_attempts": 100,
+  "probe_attempts": 32,
+  "entry_attempts": 64,
+  "knee_margin_m": 0.04,
+  "knee_target_m": 0.05,
+  "training_knee_stop_m": 0.025,
+  "landing_deadline_s": 2.4,
+  "landing_contact_s": 0.06,
+  "hold_s": 1.0,
+  "timeout_s": 5.0
+}
