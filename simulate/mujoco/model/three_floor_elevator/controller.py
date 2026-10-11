@@ -33,7 +33,6 @@ class ThreeFloorElevatorController:
         "call_up_f2",
         "call_down_f2",
         "call_down_f3",
-        "entry_call_up_f1",
         "cab_f1",
         "cab_f2",
         "cab_f3",
@@ -44,7 +43,6 @@ class ThreeFloorElevatorController:
         "call_up_f2": "indicator_call_up_f2",
         "call_down_f2": "indicator_call_down_f2",
         "call_down_f3": "indicator_call_down_f3",
-        "entry_call_up_f1": "indicator_entry_call_up_f1",
     }
 
     INDICATOR_ACTIVE_RGBA = (0.12, 0.82, 0.32, 1.0)

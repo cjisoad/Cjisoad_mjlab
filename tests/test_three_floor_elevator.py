@@ -418,12 +418,5 @@ def test_mouse_picker_maps_selected_button_geom_to_its_logical_name(scene, monke
 def test_external_entry_button_calls_the_elevator_from_floor_one(scene):
     model, data, controller = scene
     assert model.geom("entry_pad").size[0] >= 0.8
-    controller.mouse_press("entry_call_up_f1")
-    for _ in range(150):
-        controller.apply_mouse_forces()
-        mujoco.mj_step(model, data)
-        controller.update()
-        if controller.current_target == 1:
-            break
-    assert controller.current_target == 1
-    assert controller.motion_active
+    assert mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "joint_entry_call_up_f1") == -1
+    assert mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "entry_call_panel") == -1

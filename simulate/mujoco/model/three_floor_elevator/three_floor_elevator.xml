@@ -157,16 +157,6 @@
     </body>
     <!-- Ground-level approach; the robot can call a car initially upstairs. -->
     <geom name="entry_pad" type="box" pos="3.91 -3.12 -0.09" size="0.91 1.5 0.09" material="floor_mat" />
-    <geom name="entry_call_post" type="box" pos="4.55 -2 0.5" size="0.08 0.06 0.5" material="metal_mat" />
-    <geom name="entry_call_panel" type="box" pos="4.55 -2 1.1" size="0.15 0.035 0.15" material="metal_mat" contype="0" conaffinity="0" />
-    <body name="button_entry_call_up_f1" pos="4.55 -2.0 1.1">
-      <joint name="joint_entry_call_up_f1" type="slide" axis="0 1 0" range="0 0.025" damping="3" stiffness="180" springref="0" />
-      <geom name="geom_entry_call_up_f1" type="cylinder" pos="0 -0.075 0" axisangle="1 0 0 1.57079632679" size="0.075 0.025" material="up_mat" />
-      <geom name="mark_entry_up_stem" type="capsule" fromto="0 -0.102 -0.04 0 -0.102 0.04" size="0.006" material="label_mat" contype="0" conaffinity="0" />
-      <geom name="mark_entry_up_left" type="capsule" fromto="0 -0.102 0.04 -0.03 -0.102 0.01" size="0.006" material="label_mat" contype="0" conaffinity="0" />
-      <geom name="mark_entry_up_right" type="capsule" fromto="0 -0.102 0.04 0.03 -0.102 0.01" size="0.006" material="label_mat" contype="0" conaffinity="0" />
-    </body>
-    <geom name="indicator_entry_call_up_f1" type="sphere" pos="4.75 -2.08 1.1" size="0.035" rgba="0.12 0.16 0.18 1" contype="0" conaffinity="0" />
     <!-- Box cabin with transparent observation panels and car-mounted doors. -->
     <body name="elevator_car" pos="5.9 -0.2 5.6">
       <inertial pos="0 0 0.5" mass="150" diaginertia="65 65 85" />

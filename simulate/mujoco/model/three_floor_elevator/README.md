@@ -37,7 +37,7 @@ python simulate/mujoco/model/three_floor_elevator/run.py --web
 
 房间前面及两侧设置了**不可见碰撞边界**，渲染中保持开放；右侧通过候梯平台通行，楼层之间使用电梯。边界和部分家具简化碰撞体在 geom group 3，查看器默认隐藏该组，碰撞仍生效。座椅使用座面、靠背及椅腿自身的碰撞几何。其他查看器也可关闭 group 3 的显示。上层地板构成下层顶板，三层及其候梯平台另有屋顶。
 
-一楼候梯区前有外部接近平台和上行按钮，机器人可从楼外把初始位于三层的电梯叫下来。建议之后将机器人初始化在外部平台 x≈3.9、y≈-3.0，机身高度按模型设置。各层呼叫按钮位于候梯平台后侧，朝向 -Y；进入候梯区后可以沿 +Y 方向按压。
+一楼候梯区前有外部接近平台，机器人可以从楼外走入候梯区；一楼只保留候梯平台后侧的上行按钮。建议之后将机器人初始化在外部平台 x≈3.9、y≈-3.0，机身高度按模型设置。各层呼叫按钮位于候梯平台后侧，朝向 -Y；进入候梯区后可以沿 +Y 方向按压。
 
 灯开关中心距本层地面 1.12 m，其余按钮为 1.10 m。行程 25 mm，压入超过 16 mm 触发，回弹至 6 mm 以下才能再次触发。机器人真实接触和鼠标共用同一事件路径。灯开关只改变本层灯；持续按住只触发一次。
 
@@ -52,7 +52,6 @@ python simulate/mujoco/model/three_floor_elevator/run.py --web
 | 房间灯 | `lamp_f1`、`lamp_f2`、`lamp_f3` |
 | 灯开关逻辑名 | `light_f1`、`light_f2`、`light_f3` |
 | 楼层呼叫逻辑名 | `call_up_f1`、`call_up_f2`、`call_down_f2`、`call_down_f3` |
-| 楼外一楼呼叫逻辑名 | `entry_call_up_f1` |
 | 轿厢按钮逻辑名 | `cab_f1`、`cab_f2`、`cab_f3` |
 | 按钮实体 | `button_<逻辑名>` body、`joint_<逻辑名>` joint、`geom_<逻辑名>` geom |
 | 电梯 | `elevator_car` body、`lift_z` joint、`lift_position` actuator |
