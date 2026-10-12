@@ -7,7 +7,7 @@ from pathlib import Path
 import time
 from types import SimpleNamespace
 import torch
-from src.tasks.loco_pedipulation.mdp.commands import HOLD
+from src.tasks.loco_pedipulation.mdp.commands import HOLD, QUAD
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -479,7 +479,9 @@ class _FullChainBehavior:
     # Keep the source teacher's target-change bookkeeping so FR activation,
     # retargeting and R use its original quad/tripod support transitions.
     super().set_command(ids, velocity=values[:, :3], target_offset=values[:, 3:])
-    self._command[ids] = values
+    # Loco velocity uses the source command's ramp; biped has direct twist.
+    biped = self.owner[ids] == BIPED
+    self._command[ids[biped]] = values[biped]
     self.requested_velocity[ids] = values[:, :3]
     self.requested_offset[ids] = values[:, 3:]
 
@@ -650,9 +652,39 @@ def load_full_chain(args, *, render_mode=None):
   from src.tasks.transition_t.rl import TransitionOnPolicyRunner, transition_ppo_runner_cfg
   from src.tasks.transition_down_t.commands import DownMotion, align_reference
   from src.tasks.transition_t.commands import TransitionCommand, TransitionMotion
-  from src.tasks.transition_t.keyboard import AlignedKeyboardTeacher, KeyboardTransitionActionCfg
+  from src.tasks.transition_t.keyboard import (
+    AlignedKeyboardTeacher, KeyboardTransitionAction, KeyboardTransitionActionCfg)
   from src.tasks.teacher_common.env_cfg import loco_pedipulation_teacher_env_cfg
   _ensure_full_chain_classes()
+
+  class FullChainAction(KeyboardTransitionAction):
+    def _write_target(self, selected_action):
+      term = self._env.command_manager.get_term('twist')
+      # Only ordinary four-foot locomotion bypasses the FR governor. Keep
+      # limits through preparation, tripod support, and the whole return;
+      # enabled catches a new FR request before the support FSM advances.
+      source = (term.owner == QUADRUPED) & (term.phase == QUAD) & ~term.enabled
+      limiter = self.target_limiter
+      if limiter is None or not source.any():
+        return super()._write_target(selected_action)
+      target = (self.default_angles[source] + self.cfg.scale * selected_action[source]
+                + self.motor_offsets[source])
+      previous = limiter.position[source].clone()
+      super()._write_target(selected_action)
+      # The loco teacher was trained without an FR governor. Applying the
+      # transition-only FR limits distorts its four-foot walking gait.
+      # Track its actual PD target so tripod support or the next actor starts there,
+      # with a bounded velocity estimate for the governor's re-entry.
+      limiter.position[source] = target
+      limiter.velocity[source] = ((target-previous)/limiter.dt).clamp(
+        -limiter.velocity_limits, limiter.velocity_limits)
+      self._raw_action[source] = selected_action[source]
+      self._env.action_manager.action.copy_(self.raw_action)
+      self._entity.set_joint_position_target(limiter.position, joint_ids=self.joint_ids)
+
+  @dataclass(kw_only=True)
+  class FullChainActionCfg(KeyboardTransitionActionCfg):
+    def build(self, env): return FullChainAction(self, env)
 
   @dataclass(kw_only=True)
   class FullChainMotionCfg(LandingCommandCfg):
@@ -719,7 +751,7 @@ def load_full_chain(args, *, render_mode=None):
     field.name: getattr(old_motion, field.name) for field in fields(old_motion)})
   # There is one action term and one physical limiter. The current owner picks
   # which actor supplies its requested 12 joint targets.
-  cfg.actions['joint_pos'] = KeyboardTransitionActionCfg(**asdict(cfg.actions['joint_pos']))
+  cfg.actions['joint_pos'] = FullChainActionCfg(**asdict(cfg.actions['joint_pos']))
   source_cfg = loco_pedipulation_teacher_env_cfg(play=True).commands['twist']
   cfg.commands['twist'] = FullChainCommandCfg(**asdict(source_cfg),
     rise_trigger_height=args.rise_trigger_height,
@@ -765,7 +797,8 @@ class FullKeyboardInputs:
     from keyboard_teacher import TeacherKeyboardController, workspace_for_mode
     self.term = term
     self.controller = TeacherKeyboardController(workspace_for_mode('union'),
-      idle_target=tuple(term.nominal_biped_offset.detach().cpu().tolist()))
+      idle_target=tuple(term.nominal_biped_offset.detach().cpu().tolist()),
+      vx_range=term.cfg.lin_vel_x, wz_range=term.cfg.ang_vel_z)
     self.sync()
 
   def sync(self):

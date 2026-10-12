@@ -144,6 +144,94 @@ def test_quad_teacher_r_restores_support_gradually(ready_chain, monkeypatch):
     assert float(obs[0, -1]) == 0.
 
 
+def test_full_chain_source_teacher_applies_original_targets(ready_chain, monkeypatch):
+    env, _, action, term, *_ = ready_chain
+    from types import SimpleNamespace
+    # A teacher request larger than the FR governor's one-substep envelope
+    # must reach PD unchanged, just as in keyboard_teacher.py.
+    monkeypatch.setattr(action, 'source_teacher', SimpleNamespace(
+        actions=lambda env, ids: torch.full((len(ids), 12), .8, device=env.device)))
+    env.action_manager.process_action(torch.zeros(1, 12))
+    action.delay_steps[:] = 2
+    old = action.default_angles.clone()
+    for substep in range(env.cfg.decimation):
+        env.action_manager.apply_action()
+        expected = old if substep < 2 else old + .25 * .8
+        torch.testing.assert_close(action._entity.data.joint_pos_target[:, action.joint_ids], expected)
+        torch.testing.assert_close(action.target_limiter.position, expected)
+        torch.testing.assert_close(action.raw_action,
+            (expected-action.default_angles-action.motor_offsets)/action.cfg.scale)
+        torch.testing.assert_close(env.action_manager.action, action.raw_action)
+    # Keep one governor with the last PD target as its starting point when
+    # the rise actor takes over; do not reset its position at the handoff.
+    before = action.target_limiter.position.clone()
+    velocity = action.target_limiter.velocity.clone()
+    term.owner[:] = fsm.RISE
+    env.action_manager.process_action(torch.full((1, 12), -4.))
+    action.delay_steps.zero_()
+    env.action_manager.apply_action()
+    change = action.target_limiter.velocity - velocity
+    assert (change.abs() <= action.target_limiter.acceleration_limits * env.physics_dt + 1e-6).all()
+    assert (action.target_limiter.position[:, 3:6]-before[:, 3:6]).abs().max() < .001
+
+
+@pytest.mark.parametrize('phase,enabled', [(0, True), (1, True), (2, True),
+    (3, True), (4, False), (5, False)])
+def test_full_chain_fr_manipulation_keeps_governor(ready_chain, phase, enabled):
+    env, _, action, term, *_ = ready_chain
+    env.action_manager.process_action(torch.zeros(1, 12))
+    term.phase[:] = phase
+    term.enabled[:] = enabled
+    before = action.target_limiter.position.clone()
+    velocity = action.target_limiter.velocity.clone()
+    action._write_target(torch.full((1, 12), 4.))
+    delta = action.target_limiter.position-before
+    assert delta[:, 3:6].abs().max() < .001
+    assert ((action.target_limiter.velocity-velocity).abs()
+        <= action.target_limiter.acceleration_limits*env.physics_dt+1e-6).all()
+    torch.testing.assert_close(action._entity.data.joint_pos_target[:, action.joint_ids],
+        action.target_limiter.position)
+    torch.testing.assert_close(env.action_manager.action, action.raw_action)
+
+
+def test_full_chain_four_foot_support_releases_governor_after_return(ready_chain):
+    env, _, action, term, *_ = ready_chain
+    from src.tasks.loco_pedipulation.mdp.commands import QUAD, RETURN
+    env.action_manager.process_action(torch.zeros(1, 12))
+    term.phase[:] = RETURN
+    term.enabled[:] = False
+    action._write_target(torch.full((1, 12), .8))
+    assert (action.target_limiter.position[:, 3:6]-action.default_angles[:, 3:6]).abs().max() < .001
+    term.phase[:] = QUAD
+    action._write_target(torch.full((1, 12), .8))
+    torch.testing.assert_close(action.target_limiter.position, action.default_angles + .2)
+
+
+def test_full_chain_velocity_input_matches_source_command_ramp(ready_chain):
+    env, _, _, term, *_ = ready_chain
+    inputs = fsm.FullKeyboardInputs(term)
+    assert inputs.controller.vx_range == term.cfg.lin_vel_x
+    assert inputs.controller.wz_range == term.cfg.ang_vel_z
+    term.submit([0], [[.6, 0., 0., 0., 0., 0.]], [False])
+    assert float(term.command[0, 0]) == 0.
+    env.common_step_counter += 1
+    term._update_command()
+    assert float(term.command[0, 0]) == pytest.approx(env.step_dt / term.cfg.velocity_ramp_time)
+
+
+def test_full_chain_source_observations_match_native_teacher(ready_chain):
+    env, _, action, term, *_ = ready_chain
+    from src.tasks.teacher_common.observations import loco_policy_state
+    from src.tasks.transition_t.keyboard import teacher_observations
+    action._raw_action[:] = torch.linspace(-.8, .8, 12)
+    term._command[:] = torch.tensor([[.4, .1, -.2, .03, .02, .1]])
+    term.gait_phase[:] = .37
+    term.blend[:] = .65
+    native = loco_policy_state(env, add_noise=False)
+    adapted = teacher_observations(env, action.source_teacher.contract, torch.tensor([0]))
+    torch.testing.assert_close(adapted, native, atol=0., rtol=0.)
+
+
 def test_keyboard_foot_tracking_does_not_reset_playback(ready_chain):
     env, _, _, _, *_ = ready_chain
     # Inspect the real playback environment, including inherited terminations.
