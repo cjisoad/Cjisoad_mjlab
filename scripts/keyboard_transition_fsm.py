@@ -29,7 +29,7 @@ def should_start_down(target_z, threshold=.25, hold=.0, required=.10):
 
 
 def full_chain_tracking_failure(env, kind):
-  """Apply rise/down reference failures only while a transition owns motion."""
+  """Retain root tracking checks; foot tracking never terminates playback."""
   from src.tasks.transition_t import terminations
   term = env.command_manager.get_term('twist')
   active = (term.owner == RISE) | (term.owner == DOWN)
@@ -38,7 +38,6 @@ def full_chain_tracking_failure(env, kind):
   functions = {
     'anchor_pos': terminations.tracking_height_failure,
     'anchor_ori': terminations.tracking_orientation_failure,
-    'ee_body_pos': terminations.tracking_foot_height_failure,
   }
   return active & functions[kind](env)
 
@@ -397,6 +396,7 @@ class _FullChainBehavior:
     self.keyboard_events = []
     self.keyboard_timed_out = torch.zeros_like(self.keyboard_active)
     self.motion_active = torch.zeros_like(self.keyboard_active)
+    self.return_to_quadruped = torch.zeros_like(self.keyboard_active)
     self._last_advance_step = torch.full_like(self.owner, -1)
     self.motion_term = None
     self.down_motion_file = cfg.down_motion_file
@@ -412,6 +412,8 @@ class _FullChainBehavior:
   def _select_reference(self, reference):
     if self.motion_term.reference is reference:
       return
+    if reference is None:
+      raise ValueError('Full chain requires a rise motion reference')
     self.motion_term.reference = reference
     self.motion_term.motion = SimpleNamespace(**{
       key: torch.as_tensor(value[:, [reference.body_name_to_index[name] for name in self.motion_term.cfg.body_names],
@@ -419,6 +421,13 @@ class _FullChainBehavior:
                          device=self.device, dtype=torch.float32)
       for key, value in reference.arrays.items()}, time_step_total=reference.num_frames)
     self.motion_term.bin_count = int(reference.num_frames // (1 / self._env.step_dt)) + 1
+    # Frame indices and adaptive sampling statistics belong to this archive.
+    # The rise is longer than the landing; retaining frame 350 in a 186-frame
+    # archive causes a CUDA device assertion even while a teacher owns actions.
+    self.motion_term.time_steps.zero_()
+    self.motion_term.completed.zero_()
+    self.motion_term.bin_failed_count = torch.zeros(self.motion_term.bin_count, device=self.device)
+    self.motion_term._current_bin_failed = torch.zeros_like(self.motion_term.bin_failed_count)
 
   def _ensure_motion_references(self):
     if self.motion_term is not None:
@@ -434,7 +443,13 @@ class _FullChainBehavior:
     return self.owner
 
   def _resample_command(self, env_ids):
-    super()._resample_command(env_ids)
+    # Playback always starts from a manual owner default, never a sampled
+    # training target. Both defaults use the same quadruped FR site zero.
+    self.manual[env_ids] = True
+    self._command[env_ids] = 0.
+    self.requested_velocity[env_ids] = 0.
+    self.requested_offset[env_ids] = 0.
+    self.enabled[env_ids] = False
     self.owner[env_ids] = QUADRUPED if self.cfg.initial_state == 'quadruped' else BIPED
     self.rise_elapsed[env_ids] = 0.; self.down_elapsed[env_ids] = 0.
     self.keyboard_command[env_ids] = 0.; self.keyboard_active[env_ids] = False
@@ -444,6 +459,7 @@ class _FullChainBehavior:
       self.requested_offset[env_ids] = self.nominal_biped_offset
     self.keyboard_input_enabled[env_ids] = False; self.keyboard_timed_out[env_ids] = False
     self.motion_active[env_ids] = False; self.keyboard_revision[env_ids] += 1
+    self.return_to_quadruped[env_ids] = False
     self.rise_hold_elapsed[env_ids] = 0.; self.down_hold_elapsed[env_ids] = 0.
     self._last_advance_step[env_ids] = self._env.common_step_counter
 
@@ -454,14 +470,25 @@ class _FullChainBehavior:
     if len(values) != len(ids) or len(active) != len(ids) or not torch.isfinite(values).all():
       raise ValueError('Full chain requires one finite six-value command per world')
     self.keyboard_input_enabled[ids] = input_enabled
+    manual = (self.owner[ids] == QUADRUPED) | (self.owner[ids] == BIPED)
+    ids, values, active = ids[manual], values[manual], active[manual]
     self.keyboard_command[ids] = values
     self.keyboard_active[ids] = active
     # Union is intentionally the only keyboard workspace. The teacher command
     # still sees the same physical shared zero in every owner state.
-    self.manual[ids] = True
+    # Keep the source teacher's target-change bookkeeping so FR activation,
+    # retargeting and R use its original quad/tripod support transitions.
+    super().set_command(ids, velocity=values[:, :3], target_offset=values[:, 3:])
     self._command[ids] = values
     self.requested_velocity[ids] = values[:, :3]
     self.requested_offset[ids] = values[:, 3:]
+
+  def request_quadruped(self, env_ids):
+    """Latch R until DOWN can start, preserving the current biped FR target."""
+    ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long).reshape(-1)
+    ids = ids[self.owner[ids] == BIPED]
+    self.return_to_quadruped[ids] = True
+    self.keyboard_command[ids, :3] = 0.
 
   def _event(self, ids, previous, state, reason):
     for i in ids.tolist():
@@ -479,24 +506,34 @@ class _FullChainBehavior:
 
   def _finish_down(self, ids):
     motion = self.motion_term
+    self.keyboard_command[ids, 3:] = self._reference_offset()[ids]
+    self.keyboard_active[ids] = True
+    returning = ids[self.return_to_quadruped[ids]]
+    self.keyboard_command[returning, 3:] = 0.
+    self.keyboard_active[returning] = False
+    self.return_to_quadruped[ids] = False
     motion.active[ids] = False
     self.motion_active[ids] = False
     self.owner[ids] = QUADRUPED
     self.keyboard_command[ids, :3] = 0.
+    self._command[ids] = self.keyboard_command[ids]
+    self.requested_velocity[ids] = 0.
+    self.requested_offset[ids] = self.keyboard_command[ids, 3:]
     self.keyboard_revision[ids] += 1
     self._event(ids, 'DOWN', 'QUADRUPED', 'landing_reference_completed')
 
   def advance(self):
     self._ensure_motion_references()
     step = self._env.common_step_counter
-    if step == self._last_advance_step:
+    advancing = self._last_advance_step != step
+    if not advancing.any():
       return
     self._last_advance_step[:] = step
     dt = self._env.step_dt
     dz = self.keyboard_command[:, 5]
     quad = self.owner == QUADRUPED
     biped = self.owner == BIPED
-    enabled = self.keyboard_input_enabled
+    enabled = self.keyboard_input_enabled & advancing
     self.rise_elapsed.copy_(torch.where(quad & enabled & (dz >= self.rise_trigger_height - 1e-9),
       self.rise_elapsed + dt, torch.zeros_like(self.rise_elapsed)))
     self.down_elapsed.copy_(torch.where(biped & enabled & (dz <= self.down_trigger_height + 1e-9),
@@ -505,45 +542,60 @@ class _FullChainBehavior:
     if len(ids):
       self._select_reference(self.rise_reference)
       self.motion_term.start_from_current_state(ids); self.motion_term.active[ids] = True
+      self.motion_active[ids] = True
       self.owner[ids] = RISE; self.rise_elapsed[ids] = 0.; self.keyboard_revision[ids] += 1
       self._event(ids, 'QUADRUPED', 'RISE', 'FR>=rise_trigger_height')
     # RISE is handed to the caller's rise policy. The caller marks the actual
     # completion; this term does not guess completion from a target height.
-    ids = (biped & (self.down_elapsed >= self.trigger_seconds - 1e-9)).nonzero().flatten()
+    ids = (biped & ((self.down_elapsed >= self.trigger_seconds - 1e-9)
+      | self.return_to_quadruped)).nonzero().flatten()
     if len(ids):
       self._capture_down_reference(ids)
       self.owner[ids] = DOWN; self.down_elapsed[ids] = 0.; self.keyboard_revision[ids] += 1
-      self._event(ids, 'BIPED', 'DOWN', 'FR<=down_trigger_height')
+      returning = self.return_to_quadruped[ids]
+      self._event(ids[returning], 'BIPED', 'DOWN', 'R_return_to_quadruped')
+      self._event(ids[~returning], 'BIPED', 'DOWN', 'FR<=down_trigger_height')
 
-  def mark_rise_complete(self, ids):
-    ids = torch.as_tensor(ids, device=self.device, dtype=torch.long).reshape(-1)
-    self.owner[ids] = BIPED; self.keyboard_command[ids, :3] = 0.; self.keyboard_revision[ids] += 1
-    self._event(ids, 'RISE', 'BIPED', 'rise_policy_complete')
+  def _reference_offset(self):
+    """Reference FR target in anchor axes, measured from the quadruped zero."""
+    from src.tasks.teacher_common.anchor_frame import anchor_basis, to_anchor
+    motion = self.motion_term
+    fr = motion.cfg.body_names.index('FR_foot')
+    basis = anchor_basis(motion.anchor_quat_w, self.robot.data.gravity_vec_w)
+    return to_anchor(basis, motion.body_pos_w[:, fr] - motion.anchor_pos_w) - self.zero
 
   def _update_command(self):
     self._ensure_motion_references()
-    from src.tasks.teacher_common.anchor_frame import anchor_basis, to_anchor
     self.advance()
-    active_owner = (self.owner == RISE) | (self.owner == DOWN)
     if self.motion_term.completed.any():
       rise_done = (self.owner == RISE) & self.motion_term.completed
       down_done = (self.owner == DOWN) & self.motion_term.completed
       if rise_done.any(): self.mark_rise_complete(rise_done.nonzero().flatten())
       if down_done.any(): self._finish_down(down_done.nonzero().flatten())
-    self.phase[:] = HOLD; self.blend[:] = 1.
-    active = active_owner
+    preserved = self.command.clone()
+    super()._update_command()
+    # QUADRUPED identifies the loco teacher, which supports both four-foot
+    # locomotion and tripod manipulation. Only other actors force HOLD/blend=1.
+    controlled = self.owner != QUADRUPED
+    self._command[controlled] = preserved[controlled]
+    self.phase[controlled] = HOLD
+    self.blend[controlled] = 1.
+    active = (self.owner == RISE) | (self.owner == DOWN)
     if active.any():
-      motion = self.motion_term
-      fr = motion.cfg.body_names.index('FR_foot')
-      basis = anchor_basis(motion.anchor_quat_w, self.robot.data.gravity_vec_w)
-      offset = to_anchor(basis, motion.body_pos_w[:, fr] - motion.anchor_pos_w) - self.zero
+      offset = self._reference_offset()
       self._command[active, :3] = 0.; self._command[active, 3:] = offset[active]
 
   def mark_rise_complete(self, ids):
     ids = torch.as_tensor(ids, device=self.device, dtype=torch.long).reshape(-1)
+    self.keyboard_command[ids, 3:] = self._reference_offset()[ids]
+    self.keyboard_active[ids] = True
     self.motion_term.active[ids] = False; self.motion_active[ids] = False
     self.owner[ids] = BIPED; self.keyboard_command[ids, :3] = 0.; self.keyboard_revision[ids] += 1
-    self._select_reference(self.down_reference)
+    self._command[ids] = self.keyboard_command[ids]
+    self.requested_velocity[ids] = 0.
+    self.requested_offset[ids] = self.keyboard_command[ids, 3:]
+    # Keep the completed rise reference readable for observations/rewards.
+    # Select the landing reference only when DOWN actually starts.
     self._event(ids, 'RISE', 'BIPED', 'rise_policy_complete')
 
   def status(self, world=0):
@@ -614,6 +666,12 @@ def load_full_chain(args, *, render_mode=None):
       self.active = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
 
     def _resample_command(self, env_ids):
+      term = self._env.command_manager.get_term('twist')
+      term._ensure_motion_references()
+      remaining_active = self.active.clone()
+      remaining_active[env_ids] = False
+      if not remaining_active.any():
+        term._select_reference(term.down_reference)
       super()._resample_command(env_ids)
       # The landing command normally samples an arbitrary entry-bank frame.
       # That is correct for evaluation, but an interactive chain must start
@@ -671,7 +729,7 @@ def load_full_chain(args, *, render_mode=None):
   cfg.commands['twist'].down_motion_file = str(paths['motion'])
   cfg.commands['twist'].resampling_time_range = (1e9, 1e9)
   cfg.terminations = {name: TerminationTermCfg(func=full_chain_tracking_failure,
-    params={'kind': name}) for name in ('physical_failure', 'anchor_pos', 'anchor_ori', 'ee_body_pos')}
+    params={'kind': name}) for name in ('physical_failure', 'anchor_pos', 'anchor_ori')}
   env = ManagerBasedRlEnv(cfg, device=args.device, render_mode=render_mode)
   try:
     wrapped = RslRlVecEnvWrapper(env, clip_actions=10.)
@@ -708,16 +766,26 @@ class FullKeyboardInputs:
     self.term = term
     self.controller = TeacherKeyboardController(workspace_for_mode('union'),
       idle_target=tuple(term.nominal_biped_offset.detach().cpu().tolist()))
+    self.sync()
 
   def sync(self):
     if int(self.term.owner[0]) in (QUADRUPED, BIPED):
+      self.controller.idle_target = (tuple(self.term.nominal_biped_offset.detach().cpu().tolist())
+        if int(self.term.owner[0]) == BIPED else (0., 0., 0.))
       command = self.term.keyboard_command[0].detach().cpu().tolist()
+      self.controller.velocity = command[:3]
       self.controller.target = tuple(command[3:])
       self.controller.requested_target = self.controller.target
       self.controller.target_active = bool(self.term.keyboard_active[0])
 
   def update(self, keys, dt, *, focused, paused):
-    self.controller.update(keys, dt, focused=focused, paused=paused)
+    self.sync()
+    if int(self.term.owner[0]) in TEACHER_STATES:
+      if 'r' in keys and int(self.term.owner[0]) == BIPED and focused and not paused:
+        self.term.request_quadruped([0])
+        self.controller.velocity = [0., 0., 0.]
+      else:
+        self.controller.update(keys, dt, focused=focused, paused=paused)
     self.term.submit([0], [self.controller.command], [self.controller.target_active],
       input_enabled=focused and not paused)
     self.term._env.observation_manager._obs_buffer = None
@@ -798,7 +866,7 @@ def run_full(args):
 
       def _set_status_overlay(self, viewer):
         status = self.get_status(); state = term.status(self.env_idx)
-        labels = ('Simulation\nState\nActive input\nFR target dz\nRise threshold\nDown threshold\n'
+        labels = ('Simulation\nState\nActive input\nFR dz (quadruped zero)\nRise threshold\nDown threshold\n'
           'Rise hold\nDown hold\nRise model\nDown model\nReset')
         values = (f"{'PAUSED' if status.paused else 'RUNNING'}\n{state['state']}\n"
           f"{'ACTIVE' if keyboard.focused else 'INACTIVE'}\n{state['requested_dz']:.3f}m\n"
@@ -810,9 +878,11 @@ def run_full(args):
 
     print('[INFO] Full chain: QUADRUPED -> RISE(model_30000) -> BIPED -> DOWN(V2) -> QUADRUPED', flush=True)
     print('[INFO] Initial state: '+args.initial_state+'; keyboard workspace: union', flush=True)
+    print('[INFO] FR XYZ are absolute offsets from the quadruped stance zero in every state; transitions freeze input.', flush=True)
+    print('[INFO] Auto-reset checks: physical_failure, anchor_pos, anchor_ori; foot-height tracking does not reset playback.', flush=True)
     print(f'[INFO] Rise trigger FR dz >= {args.rise_trigger_height:.2f}m; down trigger FR dz <= {args.down_trigger_height:.2f}m; hold={args.trigger_seconds:.2f}s', flush=True)
     for name, path in paths.items(): print(f'[INFO] {name}: {path}', flush=True)
-    print('[INFO] WASD: velocity; arrows: FR XY; Q/E: FR height; R: default; Backspace: reset; Space: pause.', flush=True)
+    print('[INFO] WASD: velocity; arrows: FR XY; Q/E: FR height; R: return to quadruped/default; Backspace: reset; Space: pause.', flush=True)
     KeyboardViewer().run()
   finally:
     if keyboard: keyboard.close()
