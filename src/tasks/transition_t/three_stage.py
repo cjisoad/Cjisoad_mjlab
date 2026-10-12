@@ -8,7 +8,7 @@ from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 
 from .entry_course import EntryCommand, EntryCommandCfg, entry_course_env_cfg
-from .three_stage_rewards import knee_ground_cost, terminal_body_velocity_reward
+from .three_stage_rewards import knee_ground_cost, rise_height_reward, terminal_body_velocity_reward
 
 # Default V3 timing uses the independent 1.25x central-rise revision.
 # The original 3.44 s trace remains available beside it for reproducibility.
@@ -144,6 +144,8 @@ def three_stage_env_cfg(bank_file, *, stage=0, num_envs=4096, split='train',
     secondary=ContactMatch(mode='geom', pattern='terrain'), fields=('found','force'),
     reduce='netforce', num_slots=1, history_length=4, global_frame=True),)
   cfg.rewards['knee_ground'] = RewardTermCfg(func=knee_ground_cost, weight=-.2)
+  cfg.rewards['rise_height'] = RewardTermCfg(func=rise_height_reward, weight=.5,
+    params=dict(command_name='motion', std=.06, activation_height=.02, ramp_height=.04))
   for key, angular in (('motion_body_lin_vel',False), ('motion_body_ang_vel',True)):
     cfg.rewards[key].func = terminal_body_velocity_reward
     cfg.rewards[key].params['angular'] = angular
