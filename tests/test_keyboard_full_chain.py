@@ -18,8 +18,19 @@ def test_full_chain_cli_exposes_initial_owner_and_model_defaults():
     assert args.workspace == "union"
     assert args.quad_checkpoint_file.name == "quad_teacher.pt"
     assert args.biped_checkpoint_file.name == "biped_teacher.pt"
-    assert args.rise_checkpoint_file.name == "model_30000.pt"
-    assert args.down_checkpoint_file.name == "candidate.pt"
+    assert args.rise_checkpoint_file == fsm.ROOT/"mark/up_teacher.pt"
+    assert args.down_checkpoint_file == fsm.ROOT/"mark/down_teacher.pt"
+    assert args.rise_motion_file.name == "tripod_to_biped_v3_speed125_train.npz"
+
+
+def test_full_chain_cli_accepts_separate_rise_reference():
+    import keyboard_transition_fsm as fsm
+
+    args = fsm.parse_args(['--initial-state', 'biped', '--rise-checkpoint-file', 'model_9999.pt',
+        '--rise-motion-file', 'tripod_to_biped_v3_speed125_train.npz'])
+    assert args.rise_checkpoint_file.name == 'model_9999.pt'
+    assert args.rise_motion_file.name == 'tripod_to_biped_v3_speed125_train.npz'
+    assert args.motion_file.name == 'biped_to_tripod_v2.npz'
 
 
 def test_full_chain_thresholds_are_directional_and_have_a_hold_boundary():
@@ -53,7 +64,8 @@ def test_full_chain_constructs_all_actors_and_a_physical_world():
         assert action.source_teacher is not None
         assert action.biped_teacher is not None
         assert callable(rise) and callable(down)
-        assert paths["rise"].name == "model_30000.pt"
+        assert paths["rise"] == fsm.ROOT/"mark/up_teacher.pt"
+        assert paths["down"] == fsm.ROOT/"mark/down_teacher.pt"
         obs = env.observation_manager.compute()
         step_obs, _, done, _ = wrapped.step(fsm.FullChainPolicy(term, rise, down)(obs))
         assert step_obs["actor"].shape[-1] == 75

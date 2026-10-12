@@ -295,9 +295,12 @@ def parse_args(argv=None):
   parser.add_argument('--biped-checkpoint-file', type=Path,
     default=ROOT/'mark/biped_teacher.pt')
   parser.add_argument('--rise-checkpoint-file', type=Path,
-    default=ROOT/'logs/rsl_rl/transition_t/2026-10-09_01-13-48_transition_t_direct_4090_20261009/model_30000.pt')
+    default=ROOT/'mark/up_teacher.pt')
+  parser.add_argument('--rise-motion-file', type=Path,
+    default=ROOT/'src/tasks/transition_t/data/tripod_to_biped_v3_speed125_train.npz',
+    help='Rise reference used for both checkpoint validation and live tracking')
   parser.add_argument('--down-checkpoint-file', type=Path,
-    default=ROOT/'mark/t_down/candidate.pt')
+    default=ROOT/'mark/down_teacher.pt')
   parser.add_argument('--motion-file', type=Path,
     default=ROOT/'src/assets/motions/go2/landing_v2/biped_to_tripod_v2.npz')
   parser.add_argument('--entry-bank', type=Path,
@@ -649,6 +652,8 @@ def load_full_chain(args, *, render_mode=None, configure_env=None):
   from src.tasks.transition_down_v2.env_cfg import landing_env_cfg
   from src.tasks.transition_down_v2.commands import LandingCommand, LandingCommandCfg
   from src.tasks.transition_down_v2.rl import LandingRunner, landing_ppo_cfg
+  from src.tasks.transition_down_v2.safety import install_monitor
+  from src.tasks.transition_down_v2.gates import GateConfig
   from src.tasks.transition_t.rl import TransitionOnPolicyRunner, transition_ppo_runner_cfg
   from src.tasks.transition_down_t.commands import DownMotion, align_reference
   from src.tasks.transition_t.commands import TransitionCommand, TransitionMotion
@@ -737,7 +742,8 @@ def load_full_chain(args, *, render_mode=None, configure_env=None):
   paths = {name: Path(value).expanduser().resolve() for name, value in (
     ('quadruped', args.quad_checkpoint_file), ('biped', args.biped_checkpoint_file),
     ('rise', args.rise_checkpoint_file), ('down', args.down_checkpoint_file),
-    ('motion', args.motion_file), ('entry_bank', args.entry_bank))}
+    ('motion', args.motion_file), ('entry_bank', args.entry_bank),
+    ('rise_motion', args.rise_motion_file))}
   for name, path in paths.items():
     if not path.is_file():
       raise FileNotFoundError(f'{name} checkpoint/data not found: {path}')
@@ -757,7 +763,7 @@ def load_full_chain(args, *, render_mode=None, configure_env=None):
     rise_trigger_height=args.rise_trigger_height,
     down_trigger_height=args.down_trigger_height,
     trigger_seconds=args.trigger_seconds, initial_state=args.initial_state)
-  cfg.commands['twist'].rise_motion_file = str(ROOT/'outputs/teacher_endpoint_rise_clearance20mm_20261008/tripod_to_biped_reference.npz')
+  cfg.commands['twist'].rise_motion_file = str(paths['rise_motion'])
   cfg.commands['twist'].down_motion_file = str(paths['motion'])
   cfg.commands['twist'].resampling_time_range = (1e9, 1e9)
   cfg.terminations = {name: TerminationTermCfg(func=full_chain_tracking_failure,
@@ -766,6 +772,9 @@ def load_full_chain(args, *, render_mode=None, configure_env=None):
     configure_env(cfg)
   env = ManagerBasedRlEnv(cfg, device=args.device, render_mode=render_mode)
   try:
+    # The live world evaluates landing rewards while the down actor is loaded
+    # in a separate environment. Install the same per-physics-step monitor here.
+    install_monitor(env, GateConfig())
     wrapped = RslRlVecEnvWrapper(env, clip_actions=10.)
     action = env.action_manager.get_term('joint_pos')
     action.source_teacher = AlignedKeyboardTeacher(paths['quadruped'], 'loco_pedipulation_t', args.device)
@@ -774,7 +783,9 @@ def load_full_chain(args, *, render_mode=None, configure_env=None):
     # contracts. Validate/load the rise actor in its own rise environment;
     # execute both policies against this one physical world below.
     from src.tasks.transition_t.env_cfg import transition_env_cfg
-    rise_env = ManagerBasedRlEnv(transition_env_cfg(play=True), device=args.device)
+    rise_cfg = transition_env_cfg(play=True)
+    rise_cfg.commands['motion'].motion_file = str(paths['rise_motion'])
+    rise_env = ManagerBasedRlEnv(rise_cfg, device=args.device)
     rise_wrapped = RslRlVecEnvWrapper(rise_env, clip_actions=10.)
     try:
       rise = _copy_policy(TransitionOnPolicyRunner, transition_ppo_runner_cfg(), rise_wrapped,
@@ -923,7 +934,7 @@ def run_full(args):
         viewer.set_texts((mujoco.mjtFontScale.mjFONTSCALE_150.value,
           mujoco.mjtGridPos.mjGRID_TOPLEFT.value, labels, values))
 
-    print('[INFO] Full chain: QUADRUPED -> RISE(model_30000) -> BIPED -> DOWN(V2) -> QUADRUPED', flush=True)
+    print(f"[INFO] Full chain: QUADRUPED -> RISE({paths['rise'].name}) -> BIPED -> DOWN(V2) -> QUADRUPED", flush=True)
     print('[INFO] Initial state: '+args.initial_state+'; keyboard workspace: union', flush=True)
     print('[INFO] FR XYZ are absolute offsets from the quadruped stance zero in every state; transitions freeze input.', flush=True)
     print('[INFO] Auto-reset checks: physical_failure, anchor_pos, anchor_ori; foot-height tracking does not reset playback.', flush=True)

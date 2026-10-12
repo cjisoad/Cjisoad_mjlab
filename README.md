@@ -5,7 +5,7 @@
 
 + 启动mimic键盘测试：python scripts/play.py Transition-Go2-v0 --checkpoint-file logs/rsl_rl/transition_t/2026-10-09_01-13-48_transition_t_direct_4090_20261009/model_30000.pt --motion-file outputs/teacher_endpoint_rise_clearance20mm_20261008/tripod_to_biped_reference.npz --num-envs 1
 
-+ sswitch切换供应商后session手动切换：codex resume 01a121d2-d298-70e3-940a-6045d6f9b6a6 -c 'model_provider="openai"'
++ sswitch切换供应商后session手动切换：codex resume -c 'model_provider="openai/custom"'
 
 + 启动测试环境：python simulate/mujoco/model/three_floor_elevator/run.py
   - web端：使用--web参数，默认链接：http://127.0.0.1:8765/
