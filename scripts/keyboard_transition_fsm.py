@@ -636,7 +636,7 @@ def _copy_policy(runner_cls, runner_cfg, env, checkpoint, device, *, strict=True
   return runner.get_inference_policy(device=device)
 
 
-def load_full_chain(args, *, render_mode=None):
+def load_full_chain(args, *, render_mode=None, configure_env=None):
   """Create one physical world with rise and down actors loaded side by side."""
   os.environ.setdefault('OMP_NUM_THREADS', '1')
   os.environ.setdefault('MPLCONFIGDIR', '/tmp/keyboard_full_chain_mpl')
@@ -762,6 +762,8 @@ def load_full_chain(args, *, render_mode=None):
   cfg.commands['twist'].resampling_time_range = (1e9, 1e9)
   cfg.terminations = {name: TerminationTermCfg(func=full_chain_tracking_failure,
     params={'kind': name}) for name in ('physical_failure', 'anchor_pos', 'anchor_ori')}
+  if configure_env is not None:
+    configure_env(cfg)
   env = ManagerBasedRlEnv(cfg, device=args.device, render_mode=render_mode)
   try:
     wrapped = RslRlVecEnvWrapper(env, clip_actions=10.)
@@ -779,7 +781,19 @@ def load_full_chain(args, *, render_mode=None):
         paths['rise'], args.device, allow_legacy_target_limiter=True)
     finally:
       rise_env.close()
-    down = _copy_policy(LandingRunner, landing_ppo_cfg(), wrapped, paths['down'], args.device)
+    # Load the reverse actor against its sealed training physics contract.
+    # The composed elevator adds many scene geoms, so using the live combined
+    # model here would (correctly) fail the checkpoint's compiled-physics hash.
+    down_cfg = landing_env_cfg(play=True, split='holdout')
+    down_cfg.commands['motion'].motion_file = str(paths['motion'])
+    down_cfg.commands['motion'].entry_bank_file = str(paths['entry_bank'])
+    down_env = ManagerBasedRlEnv(down_cfg, device=args.device)
+    down_wrapped = RslRlVecEnvWrapper(down_env, clip_actions=10.)
+    try:
+      down = _copy_policy(LandingRunner, landing_ppo_cfg(), down_wrapped,
+        paths['down'], args.device)
+    finally:
+      down_env.close()
     term = env.command_manager.get_term('twist')
     term.keyboard_workspace = 'union'
     term.session_start_step = env.common_step_counter

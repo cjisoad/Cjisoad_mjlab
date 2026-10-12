@@ -352,7 +352,7 @@ def test_mouse_press_uses_the_same_physical_button_and_event_path(scene):
 
 
 @pytest.mark.parametrize("button,position,force", [
-    ("call_up_f1", (4.25, 0.80, 1.1), (0, 25, 0)),
+    ("call_up_f1", (4.25, 0.80, 0.62), (0, 25, 0)),
     ("cab_f1", (6.65, -0.87, 6.7), (25, 0, 0)),
 ])
 def test_robot_side_contact_can_press_call_and_cabin_buttons(button, position, force):

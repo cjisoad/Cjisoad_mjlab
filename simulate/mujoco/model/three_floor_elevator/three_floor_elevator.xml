@@ -213,8 +213,8 @@
       </body>
       <geom name="car_door_header" type="box" pos="-1.02 0 2.27" size="0.03 1.4 0.04" material="metal_mat" />
     </body>
-    <geom name="call_panel_f1" type="box" pos="4.275 1.10 1.1" size="0.035 0.20 0.17" material="metal_mat" contype="0" conaffinity="0" quat="0.70710678 0 0 0.70710678" />
-    <body name="button_call_up_f1" pos="4.25 1.10 1.1" quat="0.70710678 0 0 0.70710678">
+    <geom name="call_panel_f1" type="box" pos="4.275 1.10 0.62" size="0.035 0.20 0.17" material="metal_mat" contype="0" conaffinity="0" quat="0.70710678 0 0 0.70710678" />
+    <body name="button_call_up_f1" pos="4.25 1.10 0.62" quat="0.70710678 0 0 0.70710678">
       <joint name="joint_call_up_f1" type="slide" axis="1 0 0" range="0 0.025" ref="0" damping="3" stiffness="180" springref="0" />
       <geom name="geom_call_up_f1" type="cylinder" pos="-0.04 0 0" axisangle="0 1 0 1.57079632679" size="0.075 0.025" material="up_mat" />
       <geom name="mark_call_up_f1_stem" type="capsule" fromto="-0.067 0 -0.04 -0.067 0 0.04" size="0.006" material="label_mat" contype="0" conaffinity="0" />
@@ -244,7 +244,7 @@
       <geom name="mark_call_down_f3_0" type="capsule" fromto="-0.067 0 -0.04 -0.067 -0.03 -0.01" size="0.006" material="label_mat" contype="0" conaffinity="0" />
       <geom name="mark_call_down_f3_2" type="capsule" fromto="-0.067 0 -0.04 -0.067 0.03 -0.01" size="0.006" material="label_mat" contype="0" conaffinity="0" />
     </body>
-    <geom name="indicator_call_up_f1" type="sphere" pos="4.25 1.02 1.32" size="0.035" rgba="0.12 0.16 0.18 1" contype="0" conaffinity="0" />
+    <geom name="indicator_call_up_f1" type="sphere" pos="4.25 1.02 0.84" size="0.035" rgba="0.12 0.16 0.18 1" contype="0" conaffinity="0" />
     <geom name="indicator_call_up_f2" type="sphere" pos="4.1 1.02 4.12" size="0.035" rgba="0.12 0.16 0.18 1" contype="0" conaffinity="0" />
     <geom name="indicator_call_down_f2" type="sphere" pos="4.45 1.02 4.12" size="0.035" rgba="0.12 0.16 0.18 1" contype="0" conaffinity="0" />
     <geom name="indicator_call_down_f3" type="sphere" pos="4.25 1.02 6.92" size="0.035" rgba="0.12 0.16 0.18 1" contype="0" conaffinity="0" />
@@ -258,7 +258,7 @@
       <geom name="lobby_post_-1_1_f1" type="box" pos="-0.88 1.36 0.55" size="0.025 0.025 0.55" material="metal_mat" />
       <geom name="lobby_post_1_-1_f1" type="box" pos="0.88 -1.36 0.55" size="0.025 0.025 0.55" material="metal_mat" />
       <geom name="lobby_post_1_1_f1" type="box" pos="0.88 1.36 0.55" size="0.025 0.025 0.55" material="metal_mat" />
-      <geom name="call_panel_post_f1" type="box" pos="0.365 1.30 0.5" size="0.30 0.05 0.5" material="metal_mat" />
+      <geom name="call_panel_post_f1" type="box" pos="0.365 1.30 0.5" size="0.30 0.05 0.5" material="metal_mat" contype="0" conaffinity="0" />
     </body>
     <body name="lobby_f2" pos="3.91 -0.2 2.8">
       <geom name="lobby_floor_f2" type="box" pos="0 0 -0.08" size="0.91 1.4 0.08" material="lobby_mat" />
