@@ -4,15 +4,17 @@ from mjlab.utils.lab_api.math import quat_apply, quat_error_magnitude, quat_inv,
 
 STANDING_HOLD_SECONDS = 1.
 STANDING_BAD_SAMPLE_LIMIT = 1
-POSITION_RADIUS = .08
+POSITION_RADIUS = .20
+HORIZONTAL_SPEED_LIMIT = .15
 
 
 def standing_hold_policy(position_radius=POSITION_RADIUS):
   return dict(hold_s=STANDING_HOLD_SECONDS, bad_sample_limit=STANDING_BAD_SAMPLE_LIMIT,
     bad_sample_credit='reset', success_requires_good_sample=True,
-    physical_failure='immediate', objective='upright_position_hold_v2',
-    xy_radius_m=position_radius, orientation_limit_rad=.25, height_limit_m=.05,
-    target='fixed_aligned_reference_endpoint', contact_and_speed='diagnostic_only')
+    physical_failure='immediate', objective='upright_position_speed_hold_v3',
+    xy_radius_m=position_radius, horizontal_speed_limit_m_s=HORIZONTAL_SPEED_LIMIT,
+    orientation_limit_rad=.25, height_limit_m=.05,
+    target='fixed_aligned_reference_endpoint', contact='diagnostic_only', angular_and_joint_speed='diagnostic_only')
 
 
 def advance_standing_hold(duration, bad_samples, good, *, eligible, active, dt):
@@ -30,9 +32,10 @@ def advance_standing_hold(duration, bad_samples, good, *, eligible, active, dt):
 
 
 def standing_conditions(metrics, position_radius=POSITION_RADIUS):
-  """Allow stepping; require upright posture near the fixed endpoint."""
+  """Require upright posture, bounded position, and low horizontal root speed."""
   return dict(orientation=metrics['orientation_error'] < .25,
-    height=metrics['height_error'] < .05, position=metrics['xy_error'] <= position_radius)
+    height=metrics['height_error'] < .05, position=metrics['xy_error'] <= position_radius,
+    horizontal_speed=metrics['horizontal_speed'] <= HORIZONTAL_SPEED_LIMIT)
 
 
 def endpoint_metrics(env):

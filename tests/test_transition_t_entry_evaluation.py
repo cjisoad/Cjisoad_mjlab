@@ -23,6 +23,7 @@ def good_metrics(count=1):
     'xy_error': torch.zeros(count),
     'feet_rms': torch.full((count,), .01),
     'linear_speed': torch.full((count,), .1),
+    'horizontal_speed': torch.full((count,), .05),
     'angular_speed': torch.full((count,), .1),
     'rear_supported': torch.ones(count, dtype=torch.bool),
     'front_clear': torch.ones(count, dtype=torch.bool),
@@ -104,7 +105,7 @@ class EntryEvaluationHelpers(unittest.TestCase):
     completed[:] = True
     healthy = torch.zeros_like(completed)
     for _ in range(25): trials.record(completed, metrics, healthy, healthy)
-    metrics['xy_error'][:] = .09
+    metrics['xy_error'][:] = .21
     trials.record(completed, metrics, healthy, healthy)
     self.assertEqual(float(trials.standing_duration[0]), 0.)
     metrics['xy_error'][:] = 0.
@@ -158,7 +159,7 @@ class EntryEvaluationHelpers(unittest.TestCase):
     completed = torch.ones(2, dtype=torch.bool)
     healthy = torch.zeros_like(completed)
     metrics = good_metrics(2)
-    metrics['xy_error'][0] = .09
+    metrics['xy_error'][0] = .21
     metrics['feet_rms'][0] = .12
     for _ in range(10):
       trials.record(completed, metrics, healthy, healthy)
@@ -175,7 +176,7 @@ class EntryEvaluationHelpers(unittest.TestCase):
     m = module()
     trials = m.EntryTrials(1, .02, device='cpu')
     metrics = good_metrics()
-    metrics['xy_error'][:] = .09
+    metrics['xy_error'][:] = .21
     completed = torch.ones(1, dtype=torch.bool)
     healthy = torch.zeros_like(completed)
     for _ in range(499):

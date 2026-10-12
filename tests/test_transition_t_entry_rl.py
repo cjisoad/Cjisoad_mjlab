@@ -61,6 +61,24 @@ class EntryRunnerTests(unittest.TestCase):
     recipe = self.runner()._entry_recipe()
     self.assertEqual(recipe['promotion']['standing_hold']['bad_sample_limit'], 1)
     self.assertEqual(recipe['promotion']['standing_hold']['bad_sample_credit'], 'reset')
+    self.assertEqual(recipe['promotion']['standing_hold']['xy_radius_m'], .20)
+    self.assertEqual(recipe['promotion']['standing_hold']['horizontal_speed_limit_m_s'], .15)
+
+  def test_resume_rejects_old_position_only_gate_evidence(self):
+    runner = self.runner()
+    legacy = copy.deepcopy(runner._entry_recipe())
+    hold = legacy['promotion']['standing_hold']
+    hold['objective'] = 'upright_position_hold_v2'
+    hold['xy_radius_m'] = .08
+    hold.pop('horizontal_speed_limit_m_s')
+    state = dict(recipe=legacy, course=runner.term.course.state_dict(),
+      updates_completed=10, seed_checkpoint_sha256='seed')
+    with tempfile.TemporaryDirectory() as d:
+      p = Path(d)/'old.pt'; torch.save({'infos': {'transition_entry_training': state}}, p)
+      with patch('src.tasks.transition_t.rl.TransitionOnPolicyRunner.load') as parent:
+        with self.assertRaisesRegex(ValueError, 'recipe|bank'):
+          runner.resume(p)
+        parent.assert_not_called()
 
   def test_resume_rejects_old_standing_evidence_before_loading_weights(self):
     runner = self.runner()

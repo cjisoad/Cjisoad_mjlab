@@ -224,7 +224,7 @@ class KeyboardTransitionCommand(LocoPedipulationTeacherCommand):
       trigger_height=self.trigger_height, trigger_hold=float(self.trigger_elapsed[world]),
       progress=float(self.progress[world]), standing_hold=float(self.candidate_elapsed[world]),
       standing_bad_samples=int(self.candidate_bad_samples[world]),
-      xy_error=float(metrics['xy_error'][world]),
+      xy_error=float(metrics['xy_error'][world]), horizontal_speed=float(metrics['horizontal_speed'][world]),
       fr_error=float(self.fr_error[world].norm()), feet_rms=float(metrics['feet_rms'][world]), missing=missing)
 
 

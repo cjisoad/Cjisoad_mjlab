@@ -18,6 +18,7 @@ class EntryEvaluationCliTests(unittest.TestCase):
     args = self.module().parse_args(['--entry-bank', 'entries.npz', '--checkpoint', 'model.pt'])
     self.assertEqual(args.level, 'all')
     self.assertEqual(args.attempts, 64)
+    self.assertEqual(args.position_radius, .20)
 
   def test_old_policy_with_new_limiter_evaluation_requires_explicit_flag(self):
     args = self.module().parse_args(['--entry-bank', 'entries.npz', '--checkpoint', 'old.pt',

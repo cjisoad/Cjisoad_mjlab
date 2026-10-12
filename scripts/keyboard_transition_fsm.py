@@ -118,6 +118,7 @@ def print_events(term, events=None):
 
 def run(args):
   import mujoco
+  from src.tasks.transition_t.standing import POSITION_RADIUS, HORIZONTAL_SPEED_LIMIT
   from mjlab.viewer import NativeMujocoViewer
   from keyboard_x11 import X11Keyboard
   keyboard = env = None
@@ -168,12 +169,13 @@ def run(args):
         state = term.status(self.env_idx)
         labels = ('Simulation\nActive policy\nTransition model\nInput\nRequested FR dz\nExecuted FR dz\n'
           'Trigger FR dz\nTrigger hold\nReference progress\nPosition hold\n'
-          'Endpoint XY error\nWorld feet RMS (diagnostic)\nFR error (diagnostic)\nUnmet position/posture gates\nReset')
+          'Endpoint XY error\nHorizontal speed\nWorld feet RMS (diagnostic)\nFR error (diagnostic)\nUnmet standing gates\nReset')
         values = (f"{'PAUSED' if status.paused else 'RUNNING'}\n{state['state']}\n"
           f"transition_t/{paths['transition_t'].name}\n{'ACTIVE' if keyboard.focused else 'INACTIVE'}\n"
           f"{state['requested_dz']:.3f}m\n{state['executed_dz']:.3f}m\n{state['trigger_height']:.3f}m\n"
           f"{state['trigger_hold']:.2f}/0.10s\n{state['progress']:.0%}\n{state['standing_hold']:.2f}/1.00s\n"
-          f"{state['xy_error']:.3f}m / 0.080m\n"
+          f"{state['xy_error']:.3f}m / {POSITION_RADIUS:.3f}m\n"
+          f"{state['horizontal_speed']:.3f}m/s / {HORIZONTAL_SPEED_LIMIT:.3f}m/s\n"
           f"{state['feet_rms']:.3f}m\n{state['fr_error']:.3f}m\n"
           f"{', '.join(state['missing']) or 'none'}\nBackspace")
         viewer.set_texts((mujoco.mjtFontScale.mjFONTSCALE_150.value,

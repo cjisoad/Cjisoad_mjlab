@@ -11,11 +11,11 @@ from src.tasks.transition_t.standing import standing_conditions, endpoint_metric
 def values(n=1, xy=.01):
   return {name: torch.full((n,), value) for name, value in dict(
     orientation_error=.1, height_error=.01, xy_error=xy, feet_rms=.3,
-    linear_speed=.6, angular_speed=1.2, joint_speed=25.,
+    horizontal_speed=.05, linear_speed=.6, angular_speed=1.2, joint_speed=25.,
     rear_supported=False, front_clear=False).items()}
 
 
-def test_stepping_and_speed_do_not_interrupt_exactly_one_second():
+def test_stepping_with_low_horizontal_speed_keeps_one_second_window():
   trials = EntryTrials(1, .02, device='cpu')
   completed = torch.ones(1, dtype=torch.bool); healthy = ~completed
   for _ in range(49):
@@ -31,7 +31,7 @@ def test_xy_drift_resets_continuous_window_even_with_good_contacts():
   completed = torch.ones(1, dtype=torch.bool); healthy = ~completed
   m = values(); m['rear_supported'][:] = True
   for _ in range(25): trials.record(completed, m, healthy, healthy)
-  m['xy_error'][:] = .081
+  m['xy_error'][:] = .201
   trials.record(completed, m, healthy, healthy)
   assert float(trials.standing_duration[0]) == 0.
   m['xy_error'][:] = .01
@@ -44,7 +44,7 @@ def test_xy_drift_resets_continuous_window_even_with_good_contacts():
 def test_each_acceptance_bound_and_diagnostic_contact_independence():
   m = values()
   assert all(bool(v.all()) for v in standing_conditions(m).values())
-  for name, bad in [('xy_error', .081), ('height_error', .051), ('orientation_error', .251)]:
+  for name, bad in [('xy_error', .201), ('height_error', .051), ('orientation_error', .251), ('horizontal_speed', .151)]:
     m = values(); m[name][:] = bad
     assert not torch.stack(tuple(standing_conditions(m).values()), -1).all()
 
@@ -107,7 +107,7 @@ def test_radius_sensitivity_and_window_diagnostics():
   for radius, succeeds in ((.05,False),(.08,True),(.10,True)):
     trials=EntryTrials(1,.02,device='cpu',position_radius=radius,timeout_s=1.)
     m=values(xy=.07)
-    m['horizontal_speed']=torch.tensor([.4])
+    m['horizontal_speed']=torch.tensor([.1])
     m['rear_any_contact']=torch.tensor([True])
     m['FR_aligned_error']=torch.tensor([.03])
     for _ in range(50): trials.record(completed,m,healthy,healthy)
@@ -116,6 +116,37 @@ def test_radius_sensitivity_and_window_diagnostics():
     assert d['post_reference_samples'] == 50
     assert d['rear_both_support_fraction'] == 0.
     assert d['rear_any_contact_fraction'] == 1.
-    assert abs(d['horizontal_speed_mean']-.4) < 1e-6
+    assert abs(d['horizontal_speed_mean']-.1) < 1e-6
     assert abs(d['FR_aligned_error_mean']-.03) < 1e-6
     assert d['failed_gate_samples']['position'] == (0 if succeeds else 50)
+
+
+def test_relaxed_position_and_horizontal_speed_boundaries():
+  from src.tasks.transition_t.standing import standing_hold_policy
+  m = values(n=4)
+  m['xy_error'] = torch.tensor([.20, .201, .12, .12])
+  m['horizontal_speed'] = torch.tensor([.15, .05, .151, .05])
+  good = torch.stack(tuple(standing_conditions(m).values()), -1).all(-1)
+  assert good.tolist() == [True, False, False, True]
+  policy = standing_hold_policy()
+  assert policy['xy_radius_m'] == .20
+  assert policy['horizontal_speed_limit_m_s'] == .15
+  assert policy['objective'] == 'upright_position_speed_hold_v3'
+  assert policy['contact'] == 'diagnostic_only'
+
+
+def test_horizontal_speed_resets_hold_and_is_reported():
+  trials = EntryTrials(1, .02, device='cpu')
+  completed = torch.ones(1, dtype=torch.bool); healthy = ~completed
+  m = values(xy=.12)
+  for _ in range(25): trials.record(completed, m, healthy, healthy)
+  assert abs(float(trials.standing_duration[0])-.5) < 1e-9
+  m['horizontal_speed'][:] = .151
+  trials.record(completed, m, healthy, healthy)
+  assert float(trials.standing_duration[0]) == 0.
+  m['horizontal_speed'][:] = .05
+  for _ in range(49): trials.record(completed, m, healthy, healthy)
+  assert not trials.standing_held.any()
+  trials.record(completed, m, healthy, healthy)
+  assert trials.standing_held.all()
+  assert trials.records()[0]['diagnostics']['failed_gate_samples']['horizontal_speed'] == 1
