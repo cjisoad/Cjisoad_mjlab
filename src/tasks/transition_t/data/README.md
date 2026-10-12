@@ -24,6 +24,7 @@ training target whose dynamic learnability must be assessed in PPO, not a
 validated deployable controller. Curriculum promotion requires actual physics
 rollouts; no ghost/pose replay or reference fragment counts as full rise evidence.
 
-The real entry bank is intentionally not committed. Recompute its FR error and
-reference metadata with `scripts/retarget_transition_entries.py`; physical
-states, velocities, action/limiter histories and trajectory splits are retained.
+The default speed125 entry bank is committed with the reference above. If a
+different reference is selected, recompute its FR error and reference metadata
+with `scripts/retarget_transition_entries.py`; physical states, velocities,
+action/limiter histories and trajectory splits are retained.

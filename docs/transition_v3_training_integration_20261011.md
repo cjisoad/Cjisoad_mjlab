@@ -16,7 +16,7 @@
 
 匹配状态库 `src/tasks/transition_t/data/entries_v3_speed125_train.npz` 的 SHA256 为 `ba99c841a5d04a708a4d1d66594fc0ad07a13fbcb87d6f5b4ce4dbee0e48cc74`。它保留真实教师状态，以及所有根部速度、关节状态、动作历史、限速器历史、轨迹编号与划分；由于新旧参考第一帧一致，只更新了参考 metadata 和 motion hash，没有伪造或重算物理状态。
 
-`--motion-file` 显式贯穿训练、训练内留出评估及独立评估，不改旧默认参考。首次换参考用 `--allow-reference-migration`：允许改变参考哈希和时间片数量，仍严格校验物理、观测、动作。加载原始 model_30000 的 actor/critic/归一化/分布，重置优化器、课程与困难时间片统计；不允许与 --resume 同用。新 V3 checkpoint 之后可正常 --resume，并保留自己的优化器、课程、学习率。
+`--motion-file` 显式贯穿训练、训练内留出评估及独立评估；当前默认入口已切换到 V3-1.25x。首次使用其它参考时用 `--allow-reference-migration`：允许改变参考哈希和时间片数量，仍严格校验物理、观测、动作。加载原始 model_30000 的 actor/critic/归一化/分布，重置优化器、课程与困难时间片统计；不允许与 --resume 同用。新 V3 checkpoint 之后可正常 --resume，并保留自己的优化器、课程、学习率。
 
 ## 四级初始化课程
 
