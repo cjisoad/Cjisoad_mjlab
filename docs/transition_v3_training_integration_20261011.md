@@ -12,9 +12,9 @@
 
 ## 数据与权重接入
 
-完整预览 `outputs/teacher_guided_rise_v3_20261011/tripod_to_biped_v3.npz` 保留。训练派生文件 `outputs/transition_v3_training_20261011/tripod_to_biped_v3_train.npz` 共 173 帧、50 Hz、3.44 s，SHA256 `1abcb44557a1e1b64dfa0e4bde5305908574b0f55f71c6efbb96b4cf44fcbf3d`。只删除原预览末尾 1 s 停留，姿态路径完全相同，最终参考速度设为零；参考完成后由评估器另计连续 1 s，最早约 4.44 s 成功，避免末尾预览和评估重复计时。
+完整预览 `outputs/teacher_guided_rise_v3_20261011/tripod_to_biped_v3.npz` 保留。当前默认训练参考是独立的 V3-1.25x 文件 `src/tasks/transition_t/data/tripod_to_biped_v3_speed125_train.npz`，161 帧、50 Hz、3.20 s，SHA256 `db22ddd01b6b8c2e5ea46e1b571f7109c2a789cb53e35e88aa2d6bb0b8a01acf`。原始 173 帧、3.44 s 文件 `src/tasks/transition_t/data/tripod_to_biped_v3_train.npz` 保留。参考完成后由评估器另计连续 1 s，最早约 4.20 s 成功。
 
-状态库 `outputs/transition_v3_training_20261011/entries_v3_train.npz`，SHA256 `c97fd805f1b314faca15d27d7df813b0ded5148ec83de624356c9b0eb2197b14`。保留 99612 条真实教师状态，以及所有根部速度、关节状态、动作历史、限速器历史、轨迹编号与划分；用原生 MuJoCo FK 重新计算相对 V3 首帧 XY/yaw 对齐后的右前足三维误差，最大误差标签变化 2.70 cm。逐字段检查证明除 fr_error/元信息以外全部数组逐元素相同。来源仍是 loco_return/model_14999 的状态，不是用参考姿态伪造初始化。课程 0 有 1068 条训练轨迹、273 条独立留出轨迹。
+匹配状态库 `src/tasks/transition_t/data/entries_v3_speed125_train.npz` 的 SHA256 为 `ba99c841a5d04a708a4d1d66594fc0ad07a13fbcb87d6f5b4ce4dbee0e48cc74`。它保留真实教师状态，以及所有根部速度、关节状态、动作历史、限速器历史、轨迹编号与划分；由于新旧参考第一帧一致，只更新了参考 metadata 和 motion hash，没有伪造或重算物理状态。
 
 `--motion-file` 显式贯穿训练、训练内留出评估及独立评估，不改旧默认参考。首次换参考用 `--allow-reference-migration`：允许改变参考哈希和时间片数量，仍严格校验物理、观测、动作。加载原始 model_30000 的 actor/critic/归一化/分布，重置优化器、课程与困难时间片统计；不允许与 --resume 同用。新 V3 checkpoint 之后可正常 --resume，并保留自己的优化器、课程、学习率。
 

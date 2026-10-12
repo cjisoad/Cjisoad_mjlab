@@ -10,7 +10,9 @@ from mjlab.sensor import ContactMatch, ContactSensorCfg
 from .entry_course import EntryCommand, EntryCommandCfg, entry_course_env_cfg
 from .three_stage_rewards import knee_ground_cost, terminal_body_velocity_reward
 
-V3_MOTION = Path(__file__).parent/'data/tripod_to_biped_v3_train.npz'
+# Default V3 timing uses the independent 1.25x central-rise revision.
+# The original 3.44 s trace remains available beside it for reproducibility.
+V3_MOTION = Path(__file__).parent/'data/tripod_to_biped_v3_speed125_train.npz'
 STAGES = (
   dict(nominal_probability=.5, entry_probability=0., max_speed=.45, max_fr_error=.14, randomization=0.),
   dict(nominal_probability=.4, entry_probability=.4, max_speed=.45, max_fr_error=.14, randomization=.5),

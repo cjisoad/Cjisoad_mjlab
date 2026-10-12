@@ -6,7 +6,7 @@
 
 新 actor、critic、归一化器和 Adam 从零开始，`--from-scratch` 不允许与 checkpoint、resume 或参考迁移混用。旧 `model_30000` 和续训模型不参与初始化。三足 `model_14999` 只提供真实入口状态库。
 
-仓库包含 173 帧、50 Hz、3.44 s 的 V3 训练参考，保留用户认可的姿态轨迹，去掉预览用的 1 s 静止尾段，由评估单独计保持时间。状态库已按 V3 重新计算 FR 首帧误差，99,612 个物理状态保持不变。数据、教师、参考与名义物理哈希进入 checkpoint 契约。
+仓库默认使用 V3-1.25x 起立参考：161 帧、50 Hz、3.20 s；原始 173 帧、3.44 s 参考仍保留在 `src/tasks/transition_t/data/tripod_to_biped_v3_train.npz`。评估在参考完成后单独计保持时间。匹配的 entry bank 为 `src/tasks/transition_t/data/entries_v3_speed125_train.npz`，其 metadata 与默认参考 SHA256 一致。
 
 ## 三课程
 
@@ -26,7 +26,7 @@
 
 ## 成功定义与奖励
 
-参考执行完成后，连续1 s姿态误差<0.25 rad、高度误差<5 cm、固定对齐末端 XY误差≤8 cm，无物理/跟踪失败。允许原地踏步；足端跟踪、双后脚接触及速度仅作诊断。越界重新计时，没有严格足端成功率指标。最早完整首帧成功约4.44 s。
+参考执行完成后，连续1 s姿态误差<0.25 rad、高度误差<5 cm、固定对齐末端 XY误差≤8 cm，无物理/跟踪失败。允许原地踏步；足端跟踪、双后脚接触及速度仅作诊断。越界重新计时，没有严格足端成功率指标。默认参考最早完整首帧成功约4.20 s。
 
 保留根位置0.5、根姿态0.5、身体位置1、身体姿态1、线速度1、角速度1、动作变化−0.1、软限位−10、自碰撞−10、平滑位置保持+0.1。终态后腿部线/角速度误差系数降为0.2，root速度误差系数仍为1，分母保持原身体数量，避免无意提高root惩罚。起立期间速度匹配不变。
 
@@ -37,8 +37,8 @@
 ```bash
 TRANSITION_PYTHON_BIN=/opt/conda/bin/python \
 bash scripts/run_transition_v3_scratch.sh \
-  /path/to/entries_v3_train.npz \
-  /path/to/fresh/v3_scratch_run
+  src/tasks/transition_t/data/entries_v3_speed125_train.npz \
+  /path/to/fresh/v3_speed125_scratch_run
 ```
 
 默认4096环境、seed42、总预算30000次PPO更新、每100保存、每250评估。30000是本次更新总预算，不是加载30000模型后加训。每次更新包含24步rollout、5epochs、4minibatches；30000不是30000个物理步。actor75 / critic192 / action12、ELU256/128/128、初始lr3e−4、adaptive KL。
@@ -48,7 +48,7 @@ bash scripts/run_transition_v3_scratch.sh \
 ```bash
 python scripts/train_transition_entry.py --curriculum three-stage --resume \
   --checkpoint /path/to/v3_scratch_run/model_9999.pt \
-  --entry-bank /path/to/entries_v3_train.npz --iterations 30000 \
+  --entry-bank src/tasks/transition_t/data/entries_v3_speed125_train.npz --iterations 30000 \
   --num-envs 4096 --device cuda:0 --output /path/to/fresh/v3_resume \
   --clearml --clearml-task-name 'V3 three-stage resume'
 ```
@@ -59,7 +59,7 @@ python scripts/train_transition_entry.py --curriculum three-stage --resume \
 python scripts/evaluate_transition_entry.py --curriculum three-stage \
   --initialization nominal --level 0 --attempts 64 \
   --checkpoint /path/to/v3_run/model_29999.pt \
-  --entry-bank /path/to/entries_v3_train.npz --device cuda:0 \
+  --entry-bank src/tasks/transition_t/data/entries_v3_speed125_train.npz --device cuda:0 \
   --output outputs/v3_nominal_evaluation.json
 ```
 
