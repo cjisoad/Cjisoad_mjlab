@@ -10,6 +10,6 @@
 
 验证证据保存在 outputs/transition_down_v2_validation_20261011，包括 integrated_tests.log、cli_final/verification.json、smoke_entry.json、smoke_chain.json 和 local_validation.json。独立只读审查发现链评估timeout/所有者跟踪/初始命令及验收恢复计数边界，均已修复并补测。
 
-远端启动脚本改为V2 GPU冒烟后单次连续课程；旧固定阶段脚本留为run_transition_down_v1_remote.sh。服务器42311已连通，GPU空闲。重启后的EGL运行库和老师工作空间正在补齐；实际远端状态会另记到本地outputs的remote_launch.json，未确认真实PPO日志前不宣称训练启动。
+远端启动脚本改为V2 GPU冒烟后单次连续课程；旧固定阶段脚本留为run_transition_down_v1_remote.sh。42311服务器已逐项核对634个部署文件及两个教师SHA。远端重新构建了386764个老师FR训练目标。8世界GPU冒烟2次PPO更新、严格恢复、入口评估及四个真实双足教师接管均通过。4096世界正式训练已启动，首个自动checkpoint记录1次完整更新及17组Adam参数状态；最近GPU约6.7GB/24GB、68%利用率，进程PID5319仍活跃。训练未完成，不能推断最终验收结果。SSH端口、checkpoint SHA、训练目录和实际GPU状态记录在outputs/transition_down_v2_validation_20261011/remote_launch.json。
 
 未改动用户正在编辑的正向任务及README等内容。

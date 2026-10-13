@@ -7,5 +7,9 @@
 
 + sswitch切换供应商后session手动切换：codex resume -c 'model_provider="openai/custom"'
 
-+ 启动测试环境：python simulate/mujoco/model/three_floor_elevator/run.py
-  - web端：使用--web参数，默认链接：http://127.0.0.1:8765/
++ 启动测试环境：
+  - 平地：python simulate/mujoco/model/three_floor_elevator/run.py
+    + web端：使用--web参数，默认链接：http://127.0.0.1:8765/
+  - 楼房：python scripts/run_agentic_elevator.py --device cuda:0 --initial-state quadruped
+    + 默认原生 MuJoCo 窗口；HTTP 运控接口：http://127.0.0.1:8766
+    + 浏览器界面：启动时添加 `--viewer web`

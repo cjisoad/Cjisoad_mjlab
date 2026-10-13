@@ -113,15 +113,25 @@ class ObservationService:
         if self.episode_id is None:
             raise ValueError('reset observation service before use')
 
-    def observe(self, data, *, fsm, consumer_id='default', cursor=None, max_frames=2):
+    def observe(self, data, *, fsm, consumer_id='default', cursor=None, max_frames=2, replay_latest=False):
         self._require_reset()
+        if type(replay_latest) is not bool:
+            raise ValueError('replay_latest must be a boolean')
         frames, next_cursor, dropped = self.buffer.deliver(consumer_id, cursor, max_frames)
+        replayed = bool(replay_latest and not frames and max_frames and self.buffer.frames)
+        if replayed:
+            # New model sessions need an initial view even when an earlier
+            # session ACKed every frame. This neither advances the consumer nor
+            # creates a new pending delivery; capture times remain unchanged.
+            frames = deepcopy(list(self.buffer.frames)[-max_frames:])
         self.snapshot_id += 1
         status = 'error' if self.image_error else ('no_new_frame' if not frames else 'ok' if self.capture_images else 'disabled')
         return dict(schema_version='1.0', episode_id=self.episode_id, snapshot_id=self.snapshot_id,
                     sim_time=float(data.time), robot=self.state.read(data, fsm), controls=self.controls.read(data),
                     frames=deepcopy(frames), next_cursor=next_cursor, dropped_frame_count=dropped,
-                    image_status=status, **({'image_error': self.image_error} if self.image_error else {}))
+                    image_status=status, **({'image_error': self.image_error} if self.image_error else {}),
+                    **({'frames_replayed': replayed, 'ack_required': bool(frames) and not replayed}
+                       if replay_latest else {}))
 
     def acknowledge(self, consumer_id, cursor):
         self.buffer.acknowledge(consumer_id, cursor)

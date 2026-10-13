@@ -210,6 +210,46 @@ def test_closed_landing_has_no_unprotected_rear_gap(scene):
     assert model.geom(int(geom_id[0])).name == "collision_right_back_f1"
 
 
+def test_first_floor_entry_room_gap_has_a_low_collision_barrier():
+    spec = mujoco.MjSpec.from_file(str(SCENE))
+    probe = spec.worldbody.add_body(name="corner_probe")
+    probe.add_joint(name="corner_probe_joint", type=mujoco.mjtJoint.mjJNT_FREE)
+    probe.add_geom(name="corner_probe_geom", type=mujoco.mjtGeom.mjGEOM_SPHERE,
+                   size=(0.003, 0, 0), mass=0.01)
+    model = spec.compile()
+    data = mujoco.MjData(model)
+    probe_id = model.geom("corner_probe_geom").id
+    adr = model.jnt_qposadr[model.joint("corner_probe_joint").id]
+    # Seal the entry pad's room-side edge from the room front to the guard.
+    # Even a 6 mm sphere must meet a physical barrier throughout this gap.
+    for x in (2.98, 2.99, 3.0):
+        for y in (-1.95, -1.8, -1.65, -1.59):
+            for z in (0.15, 0.55, 1.05):
+                data.qpos[adr:adr + 3] = (x, y, z)
+                mujoco.mj_forward(model, data)
+                assert any(probe_id in (c.geom1, c.geom2) and c.dist < 0
+                           for c in data.contact), (x, y, z)
+
+    # The new barrier ends at guard height, without columns up to the ceiling.
+    for position in ((3.0, -1.8, 1.5), (3.0, -1.6, 2.3), (3.0, 1.2, 2.3)):
+        data.qpos[adr:adr + 3] = position
+        mujoco.mj_forward(model, data)
+        assert not any(probe_id in (c.geom1, c.geom2) and c.dist < 0
+                       for c in data.contact), position
+
+    # The regular outside entrance and room/lobby passage remain traversable.
+    spec.geom("corner_probe_geom").size = (0.2, 0, 0)
+    model = spec.compile()
+    data = mujoco.MjData(model)
+    probe_id = model.geom("corner_probe_geom").id
+    adr = model.jnt_qposadr[model.joint("corner_probe_joint").id]
+    for position in ((3.91, -1.56, 0.4), (3.0, -0.2, 0.4)):
+        data.qpos[adr:adr + 3] = position
+        mujoco.mj_forward(model, data)
+        assert not any(probe_id in (c.geom1, c.geom2) and c.dist < 0
+                       for c in data.contact), position
+
+
 def test_idle_lift_holds_its_floor_against_gravity(scene):
     model, data, controller = scene
     for _ in range(1000):
@@ -297,7 +337,7 @@ def test_elevator_carries_closed_doors_then_opens_at_destination(scene):
 
 def _scene_with_test_pusher():
     spec = mujoco.MjSpec.from_file(str(SCENE))
-    pusher = spec.worldbody.add_body(name="test_pusher", pos=(-2.20, 1.35, 1.12))
+    pusher = spec.worldbody.add_body(name="test_pusher", pos=(-2.20, 1.35, 0.85))
     pusher.add_joint(name="test_pusher_free", type=mujoco.mjtJoint.mjJNT_FREE)
     pusher.add_geom(
         name="test_pusher_geom",
@@ -331,6 +371,48 @@ def test_physical_contact_depresses_the_same_light_button():
     assert not model.light_active[lamp_id]
 
 
+@pytest.mark.parametrize("button", ThreeFloorElevatorController.BUTTON_NAMES)
+def test_raised_robot_foot_can_press_lower_off_center_button_face(button):
+    """A foot-sized contact at a comfortable reach must move the real plunger."""
+    spec = mujoco.MjSpec.from_file(str(SCENE))
+    floor = int(button[-1])
+    height = 0.62 if button == "call_up_f1" else 0.85
+    floor_z = 5.6 if button.startswith("cab_") else (floor - 1) * 2.8
+    if button.startswith("light_"):
+        position, force = (-2.14, 1.65, floor_z + height - 0.07), (0, 12, 0)
+    elif button.startswith("call_"):
+        x = {"call_up_f2": 4.1, "call_down_f2": 4.45}.get(button, 4.25)
+        position, force = (x + 0.06, 0.85, floor_z + height - 0.07), (0, 12, 0)
+    else:
+        y = {1: -0.87, 2: -0.4, 3: 0.07}[floor]
+        position, force = (6.65, y + 0.06, floor_z + height - 0.07), (12, 0, 0)
+    pusher = spec.worldbody.add_body(name="raised_foot", pos=position)
+    pusher.add_joint(type=mujoco.mjtJoint.mjJNT_FREE)
+    pusher.add_geom(type=mujoco.mjtGeom.mjGEOM_SPHERE, size=(0.025,), mass=0.5)
+    model = spec.compile()
+    data = mujoco.MjData(model)
+    controller = ThreeFloorElevatorController(model, data)
+    controller.reset()
+    pressed = []
+    handle_press = controller._handle_button_press
+
+    def record_press(name):
+        pressed.append(name)
+        handle_press(name)
+
+    controller._handle_button_press = record_press
+    foot = model.body("raised_foot").id
+    for _ in range(200):
+        # Represent the robot supporting its foot against gravity while pressing.
+        data.xfrc_applied[foot, :3] = force
+        data.xfrc_applied[foot, 2] = -0.5 * model.opt.gravity[2]
+        mujoco.mj_step(model, data)
+        controller.update()
+        if pressed:
+            break
+    assert pressed == [button]
+
+
 def test_mouse_press_uses_the_same_physical_button_and_event_path(scene):
     model, data, controller = scene
     lamp_id = _object_id(model, mujoco.mjtObj.mjOBJ_LIGHT, "lamp_f1")
@@ -353,7 +435,7 @@ def test_mouse_press_uses_the_same_physical_button_and_event_path(scene):
 
 @pytest.mark.parametrize("button,position,force", [
     ("call_up_f1", (4.25, 0.80, 0.62), (0, 25, 0)),
-    ("cab_f1", (6.65, -0.87, 6.7), (25, 0, 0)),
+    ("cab_f1", (6.65, -0.87, 6.45), (25, 0, 0)),
 ])
 def test_robot_side_contact_can_press_call_and_cabin_buttons(button, position, force):
     spec = mujoco.MjSpec.from_file(str(SCENE))

@@ -157,8 +157,8 @@ continuous manual commands within these bounds are not a reachability guarantee.
 The union keeps the separate XYZ bounds at each height. Raising/lowering through
 the overlap clamps XY into the newly entered segment if necessary.
 
-Omitting `--workspace` uses the loaded teacher's own range. Mode selection sets
-the manual target range and does not switch policies. `--num-envs` defaults to 1.
+Omitting `--workspace` uses the loaded teacher's own range. In single-teacher
+modes, workspace selection sets the manual target range. `--num-envs` defaults to1.
 Focus the MuJoCo window: W/S moves forward/backward, A/D turns, arrows adjust FR
 XY, and Q/E adjusts FR height at .25 m/s. Targets persist on key release. R clears
 the active operation and restores the loaded teacher's default (zero for loco,
@@ -166,6 +166,55 @@ nominal biped offset for stand), including when that default lies outside the
 selected operation range. The first target key then enters the selected range.
 Backspace resets; Space pauses. The overlay shows the selected workspace and
 actual absolute FR offsets. Velocity limits follow the loaded teacher config.
+
+### Automatic rise in keyboard union mode
+
+`loco_pedipulation_t --workspace union` runs a three-teacher state machine in
+one MuJoCo environment. It supports a single world. The selected locomotion
+checkpoint may have51 or54 actor inputs; each policy receives its own validated
+observation layout.
+
+```bash
+MUJOCO_GL=glfw PYTHONPATH=. python scripts/keyboard_teacher.py loco_pedipulation_t \
+  --workspace union --num-envs 1 --device cuda:0 \
+  --checkpoint-file outputs/new_teachers_review_20261006/quadruped/checkpoints/model_9900.pt \
+  --bridge-checkpoint-file outputs/bridge_tracking_v3_recovered_20261008/model_900.pt \
+  --biped-checkpoint-file outputs/new_teachers_review_20261006/biped/checkpoints/model_14600.pt \
+  --transition-margin 0.02
+```
+
+The tripod target ceiling is FR dz0.35m. With margin0.02m, requested and
+executed FR targets must reach0.33m and the actual FR error must stay below0.10m
+for0.10s of simulation time before the rise policy takes control. Heights use
+the shared quadruped FR zero. Source targets remain within the tripod box while
+waiting for tracking to catch up.
+
+The rise phase freezes manual velocity/target edits, sets the velocity command
+to zero, and follows the rise reference. Actual momentum, joint state, previous
+actions and physics remain continuous. After the reference completes, the
+standing gates for posture, height, support and speed must hold for1s before
+the biped teacher takes over. FR tracking error is displayed as a diagnostic
+and does not block this keyboard handoff. The source-entry FR error gate,
+tracking targets, training rewards and training/evaluation success gates remain
+unchanged.
+Manual control then resumes from the final rise target within the biped box.
+The viewer displays the policy, target height, reference progress, standing
+timer and unmet gates. State transitions are printed as `KEYBOARD_HANDOFF`.
+
+A10s rise timeout pauses the viewer. Backspace resets the entire world and
+keyboard state to tripod. In tripod/biped states, R restores that teacher's
+default target. There is no automatic descent teacher: lowering a biped target
+keeps the biped policy active. Space pauses simulation and all state timers.
+
+The bridge and biped flags default to the paths in the example. Loading the
+bridge still validates its original frozen training pair at the paths recorded
+by this repository; the keyboard source is loaded independently. Thus a newer
+actor54 source does not bypass the bridge checkpoint contract.
+
+The current model900 only trained course0 and logged no strict standing
+successes. Its configured live training entry band was0.25–0.28m, while this
+keyboard trigger is0.33m. Actual rise/handoff performance needs playback
+assessment; the state machine does not bypass standing gates to force a switch.
 
 Default PPO training retains physical DR, original source pushes, sensor noise,
 random control delay and stochastic Gaussian exploration. Standing source

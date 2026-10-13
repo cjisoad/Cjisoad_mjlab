@@ -115,3 +115,53 @@ def test_unexpected_fields_unknown_path_and_unsafe_bind_rejected(endpoint):
     assert error.value.code == 404
     with pytest.raises(ValueError, match='loopback'):
         make_server(Runtime(), host='0.0.0.0', port=0)
+
+
+def test_api_only_mode_rejects_web_display_but_keeps_robot_and_rgbd_api():
+    runtime = Runtime()
+    server = make_server(runtime, port=0, web_ui=False)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f'http://127.0.0.1:{server.server_port}'
+    try:
+        for path in ('/', '/scene.png'):
+            with pytest.raises(HTTPError) as error:
+                urlopen(base + path)
+            assert error.value.code == 404
+        with pytest.raises(HTTPError) as error:
+            post(base, '/scene-click', {'camera': {}, 'x': .5, 'y': .5})
+        assert error.value.code == 404
+        assert json.load(urlopen(base + '/health'))['ok']
+        assert 'frames' in json.load(post(base, '/observe', {}))
+        command = {'cmd_v': [0, 0, 0], 'cmd_p': [0, 0, 0], 't': .1}
+        assert json.load(post(base, '/action', command))['executed_duration'] == .1
+        assert urlopen(base + '/resources/' + 'a' * 32).read() == b'frame-resource'
+        assert not any(call[0] in ('scene_image', 'click_scene') for call in runtime.calls)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_experimental_routes_are_opt_in_and_enforce_execution_ownership(endpoint):
+    from types import SimpleNamespace
+    base, runtime = endpoint
+    with pytest.raises(HTTPError) as error:
+        urlopen(base + '/pipeline/status')
+    assert error.value.code == 404
+    runtime.pipeline = SimpleNamespace(active=True,
+        start=lambda value: {'started': value}, observe=lambda value: {'observation': value},
+        acknowledge=lambda value: {'acknowledged': True}, submit=lambda value: {'accepted': True},
+        stop=lambda: {'state': 'stopping'}, status=lambda: {'state': 'executing'})
+    assert json.load(urlopen(base + '/pipeline/status'))['state'] == 'executing'
+    assert json.load(post(base, '/pipeline/observe', {})) == {'observation': {}}
+    for route, body in (
+        ('/action', {'cmd_v': [0, 0, 0], 'cmd_p': [0, 0, 0], 't': .1}),
+        ('/reset', {}), ('/button', {'button': 'call_up_f1'}),
+        ('/scene-click', {'camera': {}, 'x': .5, 'y': .5}),
+    ):
+        with pytest.raises(HTTPError) as error:
+            post(base, route, body)
+        assert error.value.code == 409
+    assert not runtime.calls
+    assert json.load(post(base, '/pipeline/stop', {}))['state'] == 'stopping'

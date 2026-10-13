@@ -37,6 +37,8 @@
   <worldbody>
     <light name="world_fill" pos="0 -8 10" dir="0 0 -1" directional="true" diffuse="0.12 0.13 0.16" specular="0 0 0" castshadow="false" />
     <camera name="front_overview" pos="1.9 -16 7.5" xyaxes="1 0 0 0 0.21 0.978" fovy="42" />
+    <!-- Buttons: 0.85 m above each floor, except the existing 0.62 m entry call.
+         Faces: 0.20 m square / 0.21 m diameter; original button-face masses retained. -->
     <!-- Floor 1: one rear wall; the front and both ends remain open. -->
     <body name="room_f1" pos="0 0 0">
       <geom name="floor_f1" type="box" pos="0 0 -0.08" size="3 2 0.08" material="floor_mat" />
@@ -55,26 +57,20 @@
       <geom name="table_leg_c_f1" type="cylinder" pos="-0.38 0.12 0.22" size="0.045 0.20" material="wood_mat" contype="0" conaffinity="0" />
       <geom name="table_leg_d_f1" type="cylinder" pos="0.48 0.12 0.22" size="0.045 0.20" material="wood_mat" contype="0" conaffinity="0" />
       <geom name="table_collision_f1" type="box" pos="0.05 -0.15 0.28" size="0.58 0.41 0.27" rgba="0 0 0 0" group="3" />
-      <geom name="chair_seat_f1" type="box" pos="-0.15 -0.95 0.46" size="0.36 0.32 0.08" material="fabric_mat" />
-      <geom name="chair_back_f1" type="box" pos="-0.15 -1.22 0.79" size="0.36 0.07 0.35" material="fabric_mat" />
       <geom name="plant_pot_f1" type="cylinder" pos="-2.40 -1.48 0.23" size="0.20 0.23" material="pot_mat" contype="0" conaffinity="0" />
       <geom name="plant_leaves_f1" type="sphere" pos="-2.40 -1.48 0.74" size="0.38" material="plant_mat" contype="0" conaffinity="0" />
       <geom name="plant_collision_f1" type="cylinder" pos="-2.40 -1.48 0.52" size="0.35 0.52" rgba="0 0 0 0" group="3" />
       <geom name="picture_frame_f1" type="box" pos="0 1.905 1.88" size="0.68 0.025 0.44" material="frame_mat" contype="0" conaffinity="0" />
       <geom name="picture_art_f1" type="box" pos="0 1.875 1.88" size="0.59 0.012 0.35" material="picture_mat" contype="0" conaffinity="0" />
-      <geom name="plate_light_f1" type="box" pos="-2.20 1.905 1.12" size="0.12 0.025 0.12" material="metal_mat" contype="0" conaffinity="0" />
-      <body name="button_light_f1" pos="-2.20 1.93 1.12">
+      <geom name="plate_light_f1" type="box" pos="-2.2 1.905 0.85" size="0.15 0.025 0.15" material="metal_mat" contype="0" conaffinity="0" />
+      <body name="button_light_f1" pos="-2.2 1.93 0.85">
         <joint name="joint_light_f1" type="slide" axis="0 1 0" range="0 0.025" ref="0" damping="3" stiffness="180" springref="0" />
-        <geom name="geom_light_f1" type="box" pos="0 -0.075 0" size="0.07 0.025 0.07" material="light_button_mat" />
+        <geom name="geom_light_f1" type="box" pos="0 -0.075 0" size="0.10 0.025 0.10" material="light_button_mat" mass="0.98" />
       </body>
       <geom name="sofa_leg_1_f1" type="cylinder" pos="-1.33 0.62 0.135" size="0.055 0.135" material="wood_mat" />
       <geom name="sofa_leg_2_f1" type="cylinder" pos="-1.33 1.1 0.135" size="0.055 0.135" material="wood_mat" />
       <geom name="sofa_leg_3_f1" type="cylinder" pos="0.03 0.62 0.135" size="0.055 0.135" material="wood_mat" />
       <geom name="sofa_leg_4_f1" type="cylinder" pos="0.03 1.1 0.135" size="0.055 0.135" material="wood_mat" />
-      <geom name="chair_leg_1_f1" type="cylinder" pos="-0.42 -1.18 0.19" size="0.045 0.19" material="wood_mat" />
-      <geom name="chair_leg_2_f1" type="cylinder" pos="-0.42 -0.72 0.19" size="0.045 0.19" material="wood_mat" />
-      <geom name="chair_leg_3_f1" type="cylinder" pos="0.12 -1.18 0.19" size="0.045 0.19" material="wood_mat" />
-      <geom name="chair_leg_4_f1" type="cylinder" pos="0.12 -0.72 0.19" size="0.045 0.19" material="wood_mat" />
     </body>
     <!-- Floor 2 repeats the furnishings and the single rear wall. -->
     <body name="room_f2" pos="0 0 2.8">
@@ -94,26 +90,20 @@
       <geom name="table_leg_c_f2" type="cylinder" pos="-0.38 0.12 0.22" size="0.045 0.20" material="wood_mat" contype="0" conaffinity="0" />
       <geom name="table_leg_d_f2" type="cylinder" pos="0.48 0.12 0.22" size="0.045 0.20" material="wood_mat" contype="0" conaffinity="0" />
       <geom name="table_collision_f2" type="box" pos="0.05 -0.15 0.28" size="0.58 0.41 0.27" rgba="0 0 0 0" group="3" />
-      <geom name="chair_seat_f2" type="box" pos="-0.15 -0.95 0.46" size="0.36 0.32 0.08" material="fabric_mat" />
-      <geom name="chair_back_f2" type="box" pos="-0.15 -1.22 0.79" size="0.36 0.07 0.35" material="fabric_mat" />
       <geom name="plant_pot_f2" type="cylinder" pos="-2.40 -1.48 0.23" size="0.20 0.23" material="pot_mat" contype="0" conaffinity="0" />
       <geom name="plant_leaves_f2" type="sphere" pos="-2.40 -1.48 0.74" size="0.38" material="plant_mat" contype="0" conaffinity="0" />
       <geom name="plant_collision_f2" type="cylinder" pos="-2.40 -1.48 0.52" size="0.35 0.52" rgba="0 0 0 0" group="3" />
       <geom name="picture_frame_f2" type="box" pos="0 1.905 1.88" size="0.68 0.025 0.44" material="frame_mat" contype="0" conaffinity="0" />
       <geom name="picture_art_f2" type="box" pos="0 1.875 1.88" size="0.59 0.012 0.35" material="picture_mat" contype="0" conaffinity="0" />
-      <geom name="plate_light_f2" type="box" pos="-2.20 1.905 1.12" size="0.12 0.025 0.12" material="metal_mat" contype="0" conaffinity="0" />
-      <body name="button_light_f2" pos="-2.20 1.93 1.12">
+      <geom name="plate_light_f2" type="box" pos="-2.2 1.905 0.85" size="0.15 0.025 0.15" material="metal_mat" contype="0" conaffinity="0" />
+      <body name="button_light_f2" pos="-2.2 1.93 0.85">
         <joint name="joint_light_f2" type="slide" axis="0 1 0" range="0 0.025" ref="0" damping="3" stiffness="180" springref="0" />
-        <geom name="geom_light_f2" type="box" pos="0 -0.075 0" size="0.07 0.025 0.07" material="light_button_mat" />
+        <geom name="geom_light_f2" type="box" pos="0 -0.075 0" size="0.10 0.025 0.10" material="light_button_mat" mass="0.98" />
       </body>
       <geom name="sofa_leg_1_f2" type="cylinder" pos="-1.33 0.62 0.135" size="0.055 0.135" material="wood_mat" />
       <geom name="sofa_leg_2_f2" type="cylinder" pos="-1.33 1.1 0.135" size="0.055 0.135" material="wood_mat" />
       <geom name="sofa_leg_3_f2" type="cylinder" pos="0.03 0.62 0.135" size="0.055 0.135" material="wood_mat" />
       <geom name="sofa_leg_4_f2" type="cylinder" pos="0.03 1.1 0.135" size="0.055 0.135" material="wood_mat" />
-      <geom name="chair_leg_1_f2" type="cylinder" pos="-0.42 -1.18 0.19" size="0.045 0.19" material="wood_mat" />
-      <geom name="chair_leg_2_f2" type="cylinder" pos="-0.42 -0.72 0.19" size="0.045 0.19" material="wood_mat" />
-      <geom name="chair_leg_3_f2" type="cylinder" pos="0.12 -1.18 0.19" size="0.045 0.19" material="wood_mat" />
-      <geom name="chair_leg_4_f2" type="cylinder" pos="0.12 -0.72 0.19" size="0.045 0.19" material="wood_mat" />
     </body>
     <!-- Floor 3 is the same room, with a roof closing the top of the stack. -->
     <body name="room_f3" pos="0 0 5.6">
@@ -134,26 +124,20 @@
       <geom name="table_leg_c_f3" type="cylinder" pos="-0.38 0.12 0.22" size="0.045 0.20" material="wood_mat" contype="0" conaffinity="0" />
       <geom name="table_leg_d_f3" type="cylinder" pos="0.48 0.12 0.22" size="0.045 0.20" material="wood_mat" contype="0" conaffinity="0" />
       <geom name="table_collision_f3" type="box" pos="0.05 -0.15 0.28" size="0.58 0.41 0.27" rgba="0 0 0 0" group="3" />
-      <geom name="chair_seat_f3" type="box" pos="-0.15 -0.95 0.46" size="0.36 0.32 0.08" material="fabric_mat" />
-      <geom name="chair_back_f3" type="box" pos="-0.15 -1.22 0.79" size="0.36 0.07 0.35" material="fabric_mat" />
       <geom name="plant_pot_f3" type="cylinder" pos="-2.40 -1.48 0.23" size="0.20 0.23" material="pot_mat" contype="0" conaffinity="0" />
       <geom name="plant_leaves_f3" type="sphere" pos="-2.40 -1.48 0.74" size="0.38" material="plant_mat" contype="0" conaffinity="0" />
       <geom name="plant_collision_f3" type="cylinder" pos="-2.40 -1.48 0.52" size="0.35 0.52" rgba="0 0 0 0" group="3" />
       <geom name="picture_frame_f3" type="box" pos="0 1.905 1.88" size="0.68 0.025 0.44" material="frame_mat" contype="0" conaffinity="0" />
       <geom name="picture_art_f3" type="box" pos="0 1.875 1.88" size="0.59 0.012 0.35" material="picture_mat" contype="0" conaffinity="0" />
-      <geom name="plate_light_f3" type="box" pos="-2.20 1.905 1.12" size="0.12 0.025 0.12" material="metal_mat" contype="0" conaffinity="0" />
-      <body name="button_light_f3" pos="-2.20 1.93 1.12">
+      <geom name="plate_light_f3" type="box" pos="-2.2 1.905 0.85" size="0.15 0.025 0.15" material="metal_mat" contype="0" conaffinity="0" />
+      <body name="button_light_f3" pos="-2.2 1.93 0.85">
         <joint name="joint_light_f3" type="slide" axis="0 1 0" range="0 0.025" ref="0" damping="3" stiffness="180" springref="0" />
-        <geom name="geom_light_f3" type="box" pos="0 -0.075 0" size="0.07 0.025 0.07" material="light_button_mat" />
+        <geom name="geom_light_f3" type="box" pos="0 -0.075 0" size="0.10 0.025 0.10" material="light_button_mat" mass="0.98" />
       </body>
       <geom name="sofa_leg_1_f3" type="cylinder" pos="-1.33 0.62 0.135" size="0.055 0.135" material="wood_mat" />
       <geom name="sofa_leg_2_f3" type="cylinder" pos="-1.33 1.1 0.135" size="0.055 0.135" material="wood_mat" />
       <geom name="sofa_leg_3_f3" type="cylinder" pos="0.03 0.62 0.135" size="0.055 0.135" material="wood_mat" />
       <geom name="sofa_leg_4_f3" type="cylinder" pos="0.03 1.1 0.135" size="0.055 0.135" material="wood_mat" />
-      <geom name="chair_leg_1_f3" type="cylinder" pos="-0.42 -1.18 0.19" size="0.045 0.19" material="wood_mat" />
-      <geom name="chair_leg_2_f3" type="cylinder" pos="-0.42 -0.72 0.19" size="0.045 0.19" material="wood_mat" />
-      <geom name="chair_leg_3_f3" type="cylinder" pos="0.12 -1.18 0.19" size="0.045 0.19" material="wood_mat" />
-      <geom name="chair_leg_4_f3" type="cylinder" pos="0.12 -0.72 0.19" size="0.045 0.19" material="wood_mat" />
     </body>
     <!-- Ground-level approach; the robot can call a car initially upstairs. -->
     <geom name="entry_pad" type="box" pos="3.91 -3.12 -0.09" size="0.91 1.5 0.09" material="floor_mat" />
@@ -162,32 +146,32 @@
       <inertial pos="0 0 0.5" mass="150" diaginertia="65 65 85" />
       <joint name="lift_z" type="slide" axis="0 0 1" range="0 5.6" ref="5.6" damping="120" armature="0.1" />
       <geom name="lift_platform" type="box" pos="0 0 -0.09" size="1.05 1.4 0.09" material="metal_mat" />
-      <geom name="panel_cab_f1" type="box" pos="1.015 -0.67 1.1" size="0.025 0.15 0.12" material="metal_mat" contype="0" conaffinity="0" />
-      <geom name="panel_cab_f2" type="box" pos="1.015 -0.20 1.1" size="0.025 0.15 0.12" material="metal_mat" contype="0" conaffinity="0" />
-      <geom name="panel_cab_f3" type="box" pos="1.015 0.27 1.1" size="0.025 0.15 0.12" material="metal_mat" contype="0" conaffinity="0" />
-      <body name="button_cab_f1" pos="0.99 -0.67 1.1">
+      <geom name="panel_cab_f1" type="box" pos="1.015 -0.67 0.85" size="0.025 0.19 0.16" material="metal_mat" contype="0" conaffinity="0" />
+      <geom name="panel_cab_f2" type="box" pos="1.015 -0.2 0.85" size="0.025 0.19 0.16" material="metal_mat" contype="0" conaffinity="0" />
+      <geom name="panel_cab_f3" type="box" pos="1.015 0.27 0.85" size="0.025 0.19 0.16" material="metal_mat" contype="0" conaffinity="0" />
+      <body name="button_cab_f1" pos="0.99 -0.67 0.85">
         <joint name="joint_cab_f1" type="slide" axis="1 0 0" range="0 0.025" ref="0" damping="3" stiffness="180" springref="0" />
-        <geom name="geom_cab_f1" type="cylinder" axisangle="0 1 0 1.57079632679" size="0.075 0.025" material="button_mat" />
-        <geom name="mark_cab_f1_b" type="box" pos="-0.027 -0.027 0.023" size="0.001 0.005 0.023" material="label_mat" contype="0" conaffinity="0" />
-        <geom name="mark_cab_f1_c" type="box" pos="-0.027 -0.027 -0.023" size="0.001 0.005 0.023" material="label_mat" contype="0" conaffinity="0" />
+        <geom name="geom_cab_f1" type="cylinder" axisangle="0 1 0 1.57079632679" size="0.105 0.025" material="button_mat" mass="0.883572934" />
+        <geom name="mark_cab_f1_b" type="box" pos="-0.027 -0.0378 0.0322" size="0.001 0.007 0.0322" material="label_mat" contype="0" conaffinity="0" />
+        <geom name="mark_cab_f1_c" type="box" pos="-0.027 -0.0378 -0.0322" size="0.001 0.007 0.0322" material="label_mat" contype="0" conaffinity="0" />
       </body>
-      <body name="button_cab_f2" pos="0.99 -0.20 1.1">
+      <body name="button_cab_f2" pos="0.99 -0.2 0.85">
         <joint name="joint_cab_f2" type="slide" axis="1 0 0" range="0 0.025" ref="0" damping="3" stiffness="180" springref="0" />
-        <geom name="geom_cab_f2" type="cylinder" axisangle="0 1 0 1.57079632679" size="0.075 0.025" material="button_mat" />
-        <geom name="mark_cab_f2_a" type="box" pos="-0.027 0 0.045" size="0.001 0.027 0.005" material="label_mat" contype="0" conaffinity="0" />
-        <geom name="mark_cab_f2_b" type="box" pos="-0.027 -0.027 0.023" size="0.001 0.005 0.023" material="label_mat" contype="0" conaffinity="0" />
-        <geom name="mark_cab_f2_g" type="box" pos="-0.027 0 0" size="0.001 0.027 0.005" material="label_mat" contype="0" conaffinity="0" />
-        <geom name="mark_cab_f2_e" type="box" pos="-0.027 0.027 -0.023" size="0.001 0.005 0.023" material="label_mat" contype="0" conaffinity="0" />
-        <geom name="mark_cab_f2_d" type="box" pos="-0.027 0 -0.045" size="0.001 0.027 0.005" material="label_mat" contype="0" conaffinity="0" />
+        <geom name="geom_cab_f2" type="cylinder" axisangle="0 1 0 1.57079632679" size="0.105 0.025" material="button_mat" mass="0.883572934" />
+        <geom name="mark_cab_f2_a" type="box" pos="-0.027 0 0.063" size="0.001 0.0378 0.007" material="label_mat" contype="0" conaffinity="0" />
+        <geom name="mark_cab_f2_b" type="box" pos="-0.027 -0.0378 0.0322" size="0.001 0.007 0.0322" material="label_mat" contype="0" conaffinity="0" />
+        <geom name="mark_cab_f2_g" type="box" pos="-0.027 0 0" size="0.001 0.0378 0.007" material="label_mat" contype="0" conaffinity="0" />
+        <geom name="mark_cab_f2_e" type="box" pos="-0.027 0.0378 -0.0322" size="0.001 0.007 0.0322" material="label_mat" contype="0" conaffinity="0" />
+        <geom name="mark_cab_f2_d" type="box" pos="-0.027 0 -0.063" size="0.001 0.0378 0.007" material="label_mat" contype="0" conaffinity="0" />
       </body>
-      <body name="button_cab_f3" pos="0.99 0.27 1.1">
+      <body name="button_cab_f3" pos="0.99 0.27 0.85">
         <joint name="joint_cab_f3" type="slide" axis="1 0 0" range="0 0.025" ref="0" damping="3" stiffness="180" springref="0" />
-        <geom name="geom_cab_f3" type="cylinder" axisangle="0 1 0 1.57079632679" size="0.075 0.025" material="button_mat" />
-        <geom name="mark_cab_f3_a" type="box" pos="-0.027 0 0.045" size="0.001 0.027 0.005" material="label_mat" contype="0" conaffinity="0" />
-        <geom name="mark_cab_f3_b" type="box" pos="-0.027 -0.027 0.023" size="0.001 0.005 0.023" material="label_mat" contype="0" conaffinity="0" />
-        <geom name="mark_cab_f3_g" type="box" pos="-0.027 0 0" size="0.001 0.027 0.005" material="label_mat" contype="0" conaffinity="0" />
-        <geom name="mark_cab_f3_c" type="box" pos="-0.027 -0.027 -0.023" size="0.001 0.005 0.023" material="label_mat" contype="0" conaffinity="0" />
-        <geom name="mark_cab_f3_d" type="box" pos="-0.027 0 -0.045" size="0.001 0.027 0.005" material="label_mat" contype="0" conaffinity="0" />
+        <geom name="geom_cab_f3" type="cylinder" axisangle="0 1 0 1.57079632679" size="0.105 0.025" material="button_mat" mass="0.883572934" />
+        <geom name="mark_cab_f3_a" type="box" pos="-0.027 0 0.063" size="0.001 0.0378 0.007" material="label_mat" contype="0" conaffinity="0" />
+        <geom name="mark_cab_f3_b" type="box" pos="-0.027 -0.0378 0.0322" size="0.001 0.007 0.0322" material="label_mat" contype="0" conaffinity="0" />
+        <geom name="mark_cab_f3_g" type="box" pos="-0.027 0 0" size="0.001 0.0378 0.007" material="label_mat" contype="0" conaffinity="0" />
+        <geom name="mark_cab_f3_c" type="box" pos="-0.027 -0.0378 -0.0322" size="0.001 0.007 0.0322" material="label_mat" contype="0" conaffinity="0" />
+        <geom name="mark_cab_f3_d" type="box" pos="-0.027 0 -0.063" size="0.001 0.0378 0.007" material="label_mat" contype="0" conaffinity="0" />
       </body>
       <geom name="car_front_glass" type="box" pos="0 -1.38 1.12" size="1.02 0.02 1.10" material="glass_mat" />
       <geom name="car_back_wall" type="box" pos="0 1.38 1.12" size="1.02 0.02 1.10" material="door_mat" />
@@ -213,43 +197,46 @@
       </body>
       <geom name="car_door_header" type="box" pos="-1.02 0 2.27" size="0.03 1.4 0.04" material="metal_mat" />
     </body>
-    <geom name="call_panel_f1" type="box" pos="4.275 1.10 0.62" size="0.035 0.20 0.17" material="metal_mat" contype="0" conaffinity="0" quat="0.70710678 0 0 0.70710678" />
-    <body name="button_call_up_f1" pos="4.25 1.10 0.62" quat="0.70710678 0 0 0.70710678">
+    <geom name="call_panel_f1" type="box" pos="4.275 1.1 0.69" size="0.035 0.23 0.21" material="metal_mat" contype="0" conaffinity="0" quat="0.70710678 0 0 0.70710678" />
+    <body name="button_call_up_f1" pos="4.25 1.1 0.62" quat="0.70710678 0 0 0.70710678">
       <joint name="joint_call_up_f1" type="slide" axis="1 0 0" range="0 0.025" ref="0" damping="3" stiffness="180" springref="0" />
-      <geom name="geom_call_up_f1" type="cylinder" pos="-0.04 0 0" axisangle="0 1 0 1.57079632679" size="0.075 0.025" material="up_mat" />
-      <geom name="mark_call_up_f1_stem" type="capsule" fromto="-0.067 0 -0.04 -0.067 0 0.04" size="0.006" material="label_mat" contype="0" conaffinity="0" />
-      <geom name="mark_call_up_f1_0" type="capsule" fromto="-0.067 0 0.04 -0.067 -0.03 0.01" size="0.006" material="label_mat" contype="0" conaffinity="0" />
-      <geom name="mark_call_up_f1_2" type="capsule" fromto="-0.067 0 0.04 -0.067 0.03 0.01" size="0.006" material="label_mat" contype="0" conaffinity="0" />
+      <geom name="geom_call_up_f1" type="cylinder" pos="-0.04 0 0" axisangle="0 1 0 1.57079632679" size="0.105 0.025" material="up_mat" mass="0.883572934" />
+      <geom name="mark_call_up_f1_stem" type="capsule" fromto="-0.067 0 -0.056 -0.067 0 0.056" size="0.0084" material="label_mat" contype="0" conaffinity="0" />
+      <geom name="mark_call_up_f1_0" type="capsule" fromto="-0.067 0 0.056 -0.067 -0.042 0.014" size="0.0084" material="label_mat" contype="0" conaffinity="0" />
+      <geom name="mark_call_up_f1_2" type="capsule" fromto="-0.067 0 0.056 -0.067 0.042 0.014" size="0.0084" material="label_mat" contype="0" conaffinity="0" />
     </body>
-    <geom name="call_panel_f2" type="box" pos="4.275 1.10 3.9" size="0.035 0.25 0.17" material="metal_mat" contype="0" conaffinity="0" quat="0.70710678 0 0 0.70710678" />
-    <body name="button_call_up_f2" pos="4.1 1.10 3.9" quat="0.70710678 0 0 0.70710678">
+    <geom name="call_panel_f2" type="box" pos="4.275 1.1 3.72" size="0.035 0.32 0.21" material="metal_mat" contype="0" conaffinity="0" quat="0.70710678 0 0 0.70710678" />
+    <body name="button_call_up_f2" pos="4.1 1.1 3.65" quat="0.70710678 0 0 0.70710678">
       <joint name="joint_call_up_f2" type="slide" axis="1 0 0" range="0 0.025" ref="0" damping="3" stiffness="180" springref="0" />
-      <geom name="geom_call_up_f2" type="cylinder" pos="-0.04 0 0" axisangle="0 1 0 1.57079632679" size="0.075 0.025" material="up_mat" />
-      <geom name="mark_call_up_f2_stem" type="capsule" fromto="-0.067 0 -0.04 -0.067 0 0.04" size="0.006" material="label_mat" contype="0" conaffinity="0" />
-      <geom name="mark_call_up_f2_0" type="capsule" fromto="-0.067 0 0.04 -0.067 -0.03 0.01" size="0.006" material="label_mat" contype="0" conaffinity="0" />
-      <geom name="mark_call_up_f2_2" type="capsule" fromto="-0.067 0 0.04 -0.067 0.03 0.01" size="0.006" material="label_mat" contype="0" conaffinity="0" />
+      <geom name="geom_call_up_f2" type="cylinder" pos="-0.04 0 0" axisangle="0 1 0 1.57079632679" size="0.105 0.025" material="up_mat" mass="0.883572934" />
+      <geom name="mark_call_up_f2_stem" type="capsule" fromto="-0.067 0 -0.056 -0.067 0 0.056" size="0.0084" material="label_mat" contype="0" conaffinity="0" />
+      <geom name="mark_call_up_f2_0" type="capsule" fromto="-0.067 0 0.056 -0.067 -0.042 0.014" size="0.0084" material="label_mat" contype="0" conaffinity="0" />
+      <geom name="mark_call_up_f2_2" type="capsule" fromto="-0.067 0 0.056 -0.067 0.042 0.014" size="0.0084" material="label_mat" contype="0" conaffinity="0" />
     </body>
-    <body name="button_call_down_f2" pos="4.45 1.10 3.9" quat="0.70710678 0 0 0.70710678">
+    <body name="button_call_down_f2" pos="4.45 1.1 3.65" quat="0.70710678 0 0 0.70710678">
       <joint name="joint_call_down_f2" type="slide" axis="1 0 0" range="0 0.025" ref="0" damping="3" stiffness="180" springref="0" />
-      <geom name="geom_call_down_f2" type="cylinder" pos="-0.04 0 0" axisangle="0 1 0 1.57079632679" size="0.075 0.025" material="down_mat" />
-      <geom name="mark_call_down_f2_stem" type="capsule" fromto="-0.067 0 0.04 -0.067 0 -0.04" size="0.006" material="label_mat" contype="0" conaffinity="0" />
-      <geom name="mark_call_down_f2_0" type="capsule" fromto="-0.067 0 -0.04 -0.067 -0.03 -0.01" size="0.006" material="label_mat" contype="0" conaffinity="0" />
-      <geom name="mark_call_down_f2_2" type="capsule" fromto="-0.067 0 -0.04 -0.067 0.03 -0.01" size="0.006" material="label_mat" contype="0" conaffinity="0" />
+      <geom name="geom_call_down_f2" type="cylinder" pos="-0.04 0 0" axisangle="0 1 0 1.57079632679" size="0.105 0.025" material="down_mat" mass="0.883572934" />
+      <geom name="mark_call_down_f2_stem" type="capsule" fromto="-0.067 0 0.056 -0.067 0 -0.056" size="0.0084" material="label_mat" contype="0" conaffinity="0" />
+      <geom name="mark_call_down_f2_0" type="capsule" fromto="-0.067 0 -0.056 -0.067 -0.042 -0.014" size="0.0084" material="label_mat" contype="0" conaffinity="0" />
+      <geom name="mark_call_down_f2_2" type="capsule" fromto="-0.067 0 -0.056 -0.067 0.042 -0.014" size="0.0084" material="label_mat" contype="0" conaffinity="0" />
     </body>
-    <geom name="call_panel_f3" type="box" pos="4.275 1.10 6.7" size="0.035 0.20 0.17" material="metal_mat" contype="0" conaffinity="0" quat="0.70710678 0 0 0.70710678" />
-    <body name="button_call_down_f3" pos="4.25 1.10 6.7" quat="0.70710678 0 0 0.70710678">
+    <geom name="call_panel_f3" type="box" pos="4.275 1.1 6.52" size="0.035 0.23 0.21" material="metal_mat" contype="0" conaffinity="0" quat="0.70710678 0 0 0.70710678" />
+    <body name="button_call_down_f3" pos="4.25 1.1 6.45" quat="0.70710678 0 0 0.70710678">
       <joint name="joint_call_down_f3" type="slide" axis="1 0 0" range="0 0.025" ref="0" damping="3" stiffness="180" springref="0" />
-      <geom name="geom_call_down_f3" type="cylinder" pos="-0.04 0 0" axisangle="0 1 0 1.57079632679" size="0.075 0.025" material="down_mat" />
-      <geom name="mark_call_down_f3_stem" type="capsule" fromto="-0.067 0 0.04 -0.067 0 -0.04" size="0.006" material="label_mat" contype="0" conaffinity="0" />
-      <geom name="mark_call_down_f3_0" type="capsule" fromto="-0.067 0 -0.04 -0.067 -0.03 -0.01" size="0.006" material="label_mat" contype="0" conaffinity="0" />
-      <geom name="mark_call_down_f3_2" type="capsule" fromto="-0.067 0 -0.04 -0.067 0.03 -0.01" size="0.006" material="label_mat" contype="0" conaffinity="0" />
+      <geom name="geom_call_down_f3" type="cylinder" pos="-0.04 0 0" axisangle="0 1 0 1.57079632679" size="0.105 0.025" material="down_mat" mass="0.883572934" />
+      <geom name="mark_call_down_f3_stem" type="capsule" fromto="-0.067 0 0.056 -0.067 0 -0.056" size="0.0084" material="label_mat" contype="0" conaffinity="0" />
+      <geom name="mark_call_down_f3_0" type="capsule" fromto="-0.067 0 -0.056 -0.067 -0.042 -0.014" size="0.0084" material="label_mat" contype="0" conaffinity="0" />
+      <geom name="mark_call_down_f3_2" type="capsule" fromto="-0.067 0 -0.056 -0.067 0.042 -0.014" size="0.0084" material="label_mat" contype="0" conaffinity="0" />
     </body>
-    <geom name="indicator_call_up_f1" type="sphere" pos="4.25 1.02 0.84" size="0.035" rgba="0.12 0.16 0.18 1" contype="0" conaffinity="0" />
-    <geom name="indicator_call_up_f2" type="sphere" pos="4.1 1.02 4.12" size="0.035" rgba="0.12 0.16 0.18 1" contype="0" conaffinity="0" />
-    <geom name="indicator_call_down_f2" type="sphere" pos="4.45 1.02 4.12" size="0.035" rgba="0.12 0.16 0.18 1" contype="0" conaffinity="0" />
-    <geom name="indicator_call_down_f3" type="sphere" pos="4.25 1.02 6.92" size="0.035" rgba="0.12 0.16 0.18 1" contype="0" conaffinity="0" />
+    <geom name="indicator_call_up_f1" type="sphere" pos="4.25 1.02 0.85" size="0.04" rgba="0.12 0.16 0.18 1" contype="0" conaffinity="0" />
+    <geom name="indicator_call_up_f2" type="sphere" pos="4.1 1.02 3.88" size="0.04" rgba="0.12 0.16 0.18 1" contype="0" conaffinity="0" />
+    <geom name="indicator_call_down_f2" type="sphere" pos="4.45 1.02 3.88" size="0.04" rgba="0.12 0.16 0.18 1" contype="0" conaffinity="0" />
+    <geom name="indicator_call_down_f3" type="sphere" pos="4.25 1.02 6.68" size="0.04" rgba="0.12 0.16 0.18 1" contype="0" conaffinity="0" />
     <body name="lobby_f1" pos="3.91 -0.2 0">
       <geom name="lobby_floor_f1" type="box" pos="0 0 -0.08" size="0.91 1.4 0.08" material="lobby_mat" />
+      <!-- Guard-height glass block closes the room-side entry-pad gap,
+           overlapping the room front boundary and the lobby entry guard. -->
+      <geom name="entry_room_glass_block_f1" type="box" pos="-0.91 -1.6 0.55" size="0.1 0.24 0.55" material="glass_mat" />
       <geom name="lobby_back_glass_f1" type="box" pos="0 1.36 0.55" size="0.91 0.025 0.55" material="glass_mat" />
       <geom name="lobby_back_rail_f1" type="box" pos="0 1.36 1.1" size="0.91 0.035 0.035" material="metal_mat" />
       <geom name="lobby_entry_guard_-1" type="box" pos="-0.78 -1.36 0.55" size="0.13 0.025 0.55" material="glass_mat" />
@@ -270,7 +257,7 @@
       <geom name="lobby_post_-1_1_f2" type="box" pos="-0.88 1.36 0.55" size="0.025 0.025 0.55" material="metal_mat" />
       <geom name="lobby_post_1_-1_f2" type="box" pos="0.88 -1.36 0.55" size="0.025 0.025 0.55" material="metal_mat" />
       <geom name="lobby_post_1_1_f2" type="box" pos="0.88 1.36 0.55" size="0.025 0.025 0.55" material="metal_mat" />
-      <geom name="call_panel_post_f2" type="box" pos="0.365 1.30 0.5" size="0.30 0.05 0.5" material="metal_mat" />
+      <geom name="call_panel_post_f2" type="box" pos="0.365 1.35 0.5" size="0.30 0.025 0.5" material="metal_mat" />
     </body>
     <body name="lobby_f3" pos="3.91 -0.2 5.6">
       <geom name="lobby_floor_f3" type="box" pos="0 0 -0.08" size="0.91 1.4 0.08" material="lobby_mat" />
@@ -283,7 +270,7 @@
       <geom name="lobby_post_1_-1_f3" type="box" pos="0.88 -1.36 0.55" size="0.025 0.025 0.55" material="metal_mat" />
       <geom name="lobby_post_1_1_f3" type="box" pos="0.88 1.36 0.55" size="0.025 0.025 0.55" material="metal_mat" />
       <geom name="lobby_roof_f3" type="box" pos="0 0 2.78" size="0.91 1.4 0.08" material="wall_mat" />
-      <geom name="call_panel_post_f3" type="box" pos="0.365 1.30 0.5" size="0.30 0.05 0.5" material="metal_mat" />
+      <geom name="call_panel_post_f3" type="box" pos="0.365 1.35 0.5" size="0.30 0.025 0.5" material="metal_mat" />
     </body>
   </worldbody>
   <actuator>

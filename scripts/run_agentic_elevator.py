@@ -22,7 +22,11 @@ def main(argv=None):
     parser.add_argument('--smoke', action='store_true', help='execute one bounded action and print a compact validation report')
     parser.add_argument('--no-images', action='store_true', help='disable RGBD for structured-state smoke only')
     parser.add_argument('--device', default='cuda:0')
+    parser.add_argument('--viewer', choices=('native', 'web', 'none'), default='native',
+        help='choose one third-person display; none keeps only the robot API (default: native)')
     parser.add_argument('--num-envs', type=int, default=1)
+    parser.add_argument('--experimental-pipeline', action='store_true',
+        help='enable persistent-planner /pipeline interfaces and a local serial executor')
     parser.add_argument('--quad-checkpoint-file', type=Path, default=ROOT/'mark/quad_teacher.pt')
     parser.add_argument('--biped-checkpoint-file', type=Path, default=ROOT/'mark/biped_teacher.pt')
     parser.add_argument('--rise-checkpoint-file', type=Path,
@@ -43,6 +47,9 @@ def main(argv=None):
         parser.error('agent control service must bind to loopback')
     os.environ.setdefault('MUJOCO_GL', 'egl')
     from src.agentic_robot.runtime import AgenticRuntime
+    if args.experimental_pipeline:
+        from src.agentic_robot.experimental.runtime import ExperimentalRuntime
+        AgenticRuntime = ExperimentalRuntime
     from src.agentic_robot.observation.service import ObservationService
     from src.agentic_robot.server import serve
     runtime = None
@@ -55,6 +62,7 @@ def main(argv=None):
             height=args.height, capture_images=not args.no_images)
         runtime.observation = observation
         observation.reset(runtime.episode_id, runtime.adapter.data, fsm=runtime._fsm_state(command_accepted=None))
+        runtime._publish_state()
         if args.smoke:
             packet = runtime.observe()
             command = {'cmd_v': [0, 0, 0], 'cmd_p': [0, 0, 0], 't': .1}
@@ -73,7 +81,7 @@ def main(argv=None):
             print(json.dumps({'report': str(report_path), **report}, allow_nan=False), flush=True)
             runtime.close()
             return
-        serve(runtime, host=args.host, port=args.port)
+        serve(runtime, host=args.host, port=args.port, viewer=args.viewer)
     except Exception:
         if runtime:
             runtime.close()

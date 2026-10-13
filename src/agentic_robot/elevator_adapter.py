@@ -31,6 +31,17 @@ class ElevatorAdapter:
         self.force_ids = np.array([c.lift_dofadr, *c.button_dofadr.values()])
         self.qpos_ids = np.array([c.lift_qposadr, *c.door_qposadr.values(), *c.button_qposadr.values()])
         self.dof_ids = np.array([c.lift_dofadr, *c.door_dofadr.values(), *c.button_dofadr.values()])
+        robot_joints = [j for j in range(self.model.njnt)
+                        if self.model.body(int(self.model.jnt_bodyid[j])).name.startswith('robot/')]
+        qpos_ids, dof_ids = [], []
+        for j in robot_joints:
+            kind = self.model.jnt_type[j]
+            nq = 7 if kind == mujoco.mjtJoint.mjJNT_FREE else 4 if kind == mujoco.mjtJoint.mjJNT_BALL else 1
+            nv = 6 if kind == mujoco.mjtJoint.mjJNT_FREE else 3 if kind == mujoco.mjtJoint.mjJNT_BALL else 1
+            qpos_ids.extend(range(int(self.model.jnt_qposadr[j]), int(self.model.jnt_qposadr[j]) + nq))
+            dof_ids.extend(range(int(self.model.jnt_dofadr[j]), int(self.model.jnt_dofadr[j]) + nv))
+        self.robot_qpos_ids = np.asarray(qpos_ids, dtype=np.int64)
+        self.robot_dof_ids = np.asarray(dof_ids, dtype=np.int64)
         self.events = []
         handle = c._handle_button_press
 
@@ -77,6 +88,9 @@ class ElevatorAdapter:
             target[0, ids] = value
         self.events.clear()
         self._write()
+        # controller.reset() ran forward kinematics before restoring the robot's
+        # qpos. Refresh derived poses before publishing the initial observation.
+        self.sync()
 
     def before_step(self):
         self.sync()
@@ -87,6 +101,29 @@ class ElevatorAdapter:
         self.sync()
         self.controller.update()
         self._write()
+
+    def step_scene(self, physics_step):
+        """Advance the scene one substep, holding only the robot's state.
+
+        Restore before refreshing contacts/controller state, so observations
+        never see the temporary robot integration. Keep solver warm-start
+        state too, allowing the next command to resume the held robot state.
+        """
+        saved = []
+        for name, ids in (('qpos', self.robot_qpos_ids),
+                          ('qvel', self.robot_dof_ids),
+                          ('qacc_warmstart', self.robot_dof_ids)):
+            target = getattr(self.sim.data, name)
+            value = target[0, ids]
+            saved.append((target, ids, value.clone() if hasattr(value, 'clone') else value.copy()))
+        self.before_step()
+        try:
+            physics_step()
+        finally:
+            for target, ids, value in saved:
+                target[0, ids] = value
+            self.sim.forward()
+        self.after_step()
 
     def evaluation_state(self):
         c = self.controller

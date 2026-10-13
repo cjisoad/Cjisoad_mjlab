@@ -1,8 +1,10 @@
-"""Round-based command execution against the existing four-owner teacher."""
+"""Bounded commands with a live scene and autonomous FSM transitions."""
 from __future__ import annotations
 
 import math
+import queue
 import threading
+import time
 import uuid
 
 import numpy as np
@@ -66,6 +68,11 @@ class AgenticRuntime:
         self.lock = threading.RLock()
         self.episode_id = str(uuid.uuid4())
         self.done_reason = None
+        self.native_viewer = None
+        self.action_interrupt = threading.Event()
+        self.background_thread = None
+        self._background_stop = threading.Event()
+        self._scene_inputs = queue.SimpleQueue()
         self.adapter = ElevatorAdapter(self.env.sim)
         self.adapter.reset()
         self.observation = observation_service
@@ -100,7 +107,95 @@ class AgenticRuntime:
                 'support_phase': int(self.term.phase[0].item()),
                 'support_blend': float(self.term.blend[0].item())}
 
-    def observe(self, consumer_id='default', cursor=None, max_frames=2):
+    def _publish_state(self):
+        """Optional snapshot hook; ordinary synchronous operation has no work."""
+
+    def _publish_current(self):
+        if self.native_viewer is not None:
+            self.native_viewer.publish(self.adapter.data)
+        self._publish_state()
+
+    def _policy_step(self):
+        """One teacher/FSM step, shared by requests and autonomous transitions."""
+        self._drain_scene_inputs()
+        policy_action = self.policy(self.obs)
+        self.obs, *_ = self.wrapped.step(policy_action)
+        self.adapter.sync()
+        owner_id = int(self.term.owner[0].item())
+        reasons = [name for name, fn in failure_checks(owner_id, terminations).items()
+                   if bool(fn(self.env)[0].item())]
+        if reasons:
+            self.done_reason = ','.join(reasons)
+        self._publish_current()
+
+    def _idle_step(self):
+        """Caller holds the runtime lock; manual owners freeze only the robot."""
+        self._drain_scene_inputs()
+        owner = int(self.term.owner[0].item())
+        if owner in (RISE, DOWN) and not self.done_reason and not self.action_interrupt.is_set():
+            self._policy_step()
+            return
+        # Bypass env.step: command timers, policy history and robot actions
+        # stay held while elevator/buttons/doors continue physical integration.
+        for _ in range(self.env.cfg.decimation):
+            self.adapter.step_scene(self.original_sim_step)
+            self.env.scene.update(dt=self.env.physics_dt)
+            if self.observation is not None:
+                self.observation.sample(self.adapter.data,
+                    fsm=self._fsm_state(command_accepted=None))
+        self._publish_current()
+
+    def queue_button_press(self, button):
+        """Nonblocking GUI input; the physics owner applies the plunger force."""
+        if button not in BUTTON_NAMES:
+            raise ValueError(f'unknown button: {button}')
+        self._scene_inputs.put(button)
+
+    def _drain_scene_inputs(self):
+        while True:
+            try:
+                button = self._scene_inputs.get_nowait()
+            except queue.Empty:
+                return
+            self.adapter.controller.mouse_press(button)
+
+    def start_background(self):
+        """Start after observation/viewer setup; all physics uses one lock."""
+        with self.lock:
+            if getattr(self, 'background_thread', None) is not None:
+                return
+            self._background_stop = threading.Event()
+
+            def run():
+                with torch.inference_mode():
+                    while not self._background_stop.is_set():
+                        started = time.monotonic()
+                        # Do not queue idle work behind an active command.
+                        if self.lock.acquire(blocking=False):
+                            try:
+                                if not self._background_stop.is_set():
+                                    self._idle_step()
+                            except Exception as exc:
+                                self.done_reason = f'background_error:{exc}'
+                                self._background_stop.set()
+                                import traceback
+                                traceback.print_exc()
+                            finally:
+                                self.lock.release()
+                        self._background_stop.wait(max(0., self.env.step_dt - (time.monotonic() - started)))
+
+            self.background_thread = threading.Thread(target=run,
+                name='elevator-idle', daemon=True)
+            self.background_thread.start()
+
+    def stop_background(self):
+        worker = getattr(self, 'background_thread', None)
+        if worker is not None:
+            self._background_stop.set()
+            worker.join()
+            self.background_thread = None
+
+    def observe(self, consumer_id='default', cursor=None, max_frames=2, replay_latest=False):
         with self.lock:
             self.adapter.sync()
             if self.observation is None:
@@ -114,7 +209,7 @@ class AgenticRuntime:
                         'image_status': 'unavailable'}
             return self.observation.observe(self.adapter.data,
                 fsm=self._fsm_state(command_accepted=None), consumer_id=consumer_id,
-                cursor=cursor, max_frames=max_frames)
+                cursor=cursor, max_frames=max_frames, replay_latest=replay_latest)
 
     def _observe_current(self):
         if self.observation is None:
@@ -173,20 +268,17 @@ class AgenticRuntime:
             accepted = owner_before in (QUADRUPED, BIPED)
             self.term.submit([0], [velocity + position], [any(abs(v) > 1e-9 for v in position)],
                              input_enabled=True)
+            # Idle scene motion can change contacts under the held robot.
+            self.env.sim.sense()
+            self.obs = self.wrapped.get_observations()
             events_start = len(self.adapter.events)
-            reasons = []
             executed_steps = 0
             for _ in range(steps):
-                policy_action = self.policy(self.obs)
-                self.obs, *_ = self.wrapped.step(policy_action)
+                if self.action_interrupt.is_set():
+                    break
+                self._policy_step()
                 executed_steps += 1
-                self.adapter.sync()
-                owner_id = int(self.term.owner[0].item())
-                for name, fn in failure_checks(owner_id, terminations).items():
-                    if bool(fn(self.env)[0].item()):
-                        reasons.append(name)
-                if reasons:
-                    self.done_reason = ','.join(reasons)
+                if self.done_reason:
                     break
             elapsed = float(self.adapter.data.time)
             status = self._fsm_state(command_accepted=accepted)
@@ -203,24 +295,36 @@ class AgenticRuntime:
                     'steps': executed_steps,
                     'command_accepted': accepted,
                     'owner_before': OWNER_NAMES[owner_before],
-                    'owner_after': status['owner'], 'stop_reason': self.done_reason,
+                    'owner_after': status['owner'], 'stop_reason': self.done_reason or
+                        ('cancelled' if self.action_interrupt.is_set() else None),
                     'events': self.adapter.events[events_start:],
                     'elevator': self.adapter.evaluation_state(), 'observation': packet}
 
     def reset(self):
-        with self.lock:
+        # Sensor buffers may have been allocated by inference-mode policy
+        # steps; reset them in the same mode as request/background execution.
+        with self.lock, torch.inference_mode():
             self.wrapped.reset()
             self.adapter.reset()
+            self._scene_inputs = queue.SimpleQueue()
             self.policy.reset()
             self.episode_id = str(uuid.uuid4())
             self.done_reason = None
             self.obs = self.wrapped.get_observations()
+            if self.native_viewer is not None:
+                self.native_viewer.publish(self.adapter.data)
             if self.observation:
                 self.observation.reset(self.episode_id, self.adapter.data,
                     fsm=self._fsm_state(command_accepted=None))
+            self.action_interrupt.clear()
+            self._publish_state()
             return self.observe()
 
     def close(self):
+        self.stop_background()
+        if self.native_viewer is not None:
+            self.native_viewer.close()
+            self.native_viewer = None
         if self.observation:
             self.observation.close()
         self.env.close()

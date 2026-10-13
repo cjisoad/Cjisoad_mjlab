@@ -1,0 +1,3 @@
+interface:
+  display_name: "MuJoCo 机器狗楼房操作"
+  short_description: "使用第一视角观测与 FSM 运控，让机器狗乘电梯并操作楼层灯光"

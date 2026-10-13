@@ -7,10 +7,11 @@ import math
 from pathlib import Path
 import re
 import threading
+import time
 from urllib.parse import parse_qs, urlsplit
 
 
-def make_server(runtime, host='127.0.0.1', port=8766):
+def make_server(runtime, host='127.0.0.1', port=8766, *, web_ui=True):
     if host not in ('127.0.0.1', 'localhost', '::1'):
         raise ValueError('agent control service must bind to loopback')
 
@@ -42,9 +43,13 @@ def make_server(runtime, host='127.0.0.1', port=8766):
         def do_GET(self):
             path = urlsplit(self.path).path
             if path == '/':
+                if not web_ui:
+                    return self._reply(404, {'error': 'web viewer is disabled'})
                 page = Path(__file__).with_name('ui.html').read_bytes()
                 return self._reply(200, page, 'text/html; charset=utf-8')
             if path == '/scene.png':
+                if not web_ui:
+                    return self._reply(404, {'error': 'web viewer is disabled'})
                 try:
                     values = parse_qs(urlsplit(self.path).query, strict_parsing=True)
                     allowed = {'azimuth', 'elevation', 'distance', 'x', 'y', 'z'}
@@ -56,6 +61,16 @@ def make_server(runtime, host='127.0.0.1', port=8766):
                     return self._reply(400, {'error': str(exc)})
             if path == '/health':
                 return self._reply(200, {'ok': True})
+            pipeline = getattr(runtime, 'pipeline', None)
+            if path == '/pipeline/status' and pipeline is not None:
+                return self._reply(200, pipeline.status())
+            match = re.fullmatch(r'/pipeline/resources/([a-f0-9]{32})', path)
+            if match and pipeline is not None:
+                try:
+                    payload, mime = runtime.snapshots.resource(match.group(1))
+                    return self._reply(200, payload, mime)
+                except KeyError:
+                    return self._reply(404, {'error': 'snapshot resource not found'})
             match = re.fullmatch(r'/resources/([a-f0-9]{32})', path)
             if match:
                 try:
@@ -74,6 +89,19 @@ def make_server(runtime, host='127.0.0.1', port=8766):
                 if not isinstance(value, dict):
                     raise ValueError('expected a JSON object')
                 path = urlsplit(self.path).path
+                pipeline = getattr(runtime, 'pipeline', None)
+                if path.startswith('/pipeline/') and pipeline is not None:
+                    routes = {'/pipeline/start': pipeline.start,
+                        '/pipeline/observe': pipeline.observe, '/pipeline/ack': pipeline.acknowledge,
+                        '/pipeline/plan': pipeline.submit}
+                    if path == '/pipeline/stop':
+                        if value:
+                            raise ValueError('stop body must be empty')
+                        return self._reply(200, pipeline.stop())
+                    if path in routes:
+                        return self._reply(200, routes[path](value))
+                if pipeline is not None and pipeline.active and path in ('/action', '/reset', '/button', '/scene-click'):
+                    return self._reply(409, {'error': 'pipeline owns execution; stop it before direct control'})
                 if path == '/action':
                     return self._reply(200, runtime.action(value))
                 if path == '/button':
@@ -81,6 +109,8 @@ def make_server(runtime, host='127.0.0.1', port=8766):
                         raise ValueError('button requires exactly a button name')
                     return self._reply(200, runtime.press_button(value['button']))
                 if path == '/scene-click':
+                    if not web_ui:
+                        return self._reply(404, {'error': 'web viewer is disabled'})
                     if set(value) != {'camera', 'x', 'y'} or not isinstance(value['camera'], dict):
                         raise ValueError('scene-click requires camera, x, and y')
                     x, y = float(value['x']), float(value['y'])
@@ -89,11 +119,15 @@ def make_server(runtime, host='127.0.0.1', port=8766):
                     return self._reply(200, runtime.click_scene(value['camera'], x, y))
                 if path == '/observe':
                     keys = set(value)
-                    if keys - {'consumer_id', 'cursor', 'max_frames'}:
+                    if keys - {'consumer_id', 'cursor', 'max_frames', 'replay_latest'}:
                         raise ValueError('unexpected observe field')
+                    replay = value.get('replay_latest', False)
+                    if type(replay) is not bool:
+                        raise ValueError('replay_latest must be a boolean')
                     return self._reply(200, runtime.observe(
                         consumer_id=value.get('consumer_id', 'default'),
-                        cursor=value.get('cursor'), max_frames=value.get('max_frames', 2)))
+                        cursor=value.get('cursor'), max_frames=value.get('max_frames', 2),
+                        **({'replay_latest': True} if replay else {})))
                 if path == '/ack':
                     if set(value) != {'consumer_id', 'cursor'}:
                         raise ValueError('ack requires consumer_id and cursor')
@@ -112,14 +146,35 @@ def make_server(runtime, host='127.0.0.1', port=8766):
     return server
 
 
-def serve(runtime, *, host='127.0.0.1', port=8766):
-    server = make_server(runtime, host, port)
+def serve(runtime, *, host='127.0.0.1', port=8766, viewer='web'):
+    if viewer not in ('native', 'web', 'none'):
+        raise ValueError('viewer must be native, web, or none')
+    server = make_server(runtime, host, port, web_ui=viewer == 'web')
+    thread = None
     print(f'Agentic robot tools: http://{host}:{server.server_port}', flush=True)
     try:
-        server.serve_forever(poll_interval=.1)
+        if viewer == 'native':
+            from .native_viewer import NativeSceneViewer
+            runtime.native_viewer = NativeSceneViewer(runtime.env.sim.mj_model, runtime.adapter.data,
+                on_button=runtime.queue_button_press)
+            runtime.native_viewer.open()
+            runtime.start_background()
+            thread = threading.Thread(target=server.serve_forever,
+                kwargs={'poll_interval': .1}, daemon=True)
+            thread.start()
+            print('Viewer: native MuJoCo window; click a button to press, drag to orbit/pan, scroll to zoom', flush=True)
+            while runtime.native_viewer.tick():
+                time.sleep(1. / 30.)
+        else:
+            print(f'Viewer: {viewer}', flush=True)
+            runtime.start_background()
+            server.serve_forever(poll_interval=.1)
     except KeyboardInterrupt:
         pass
     finally:
-        server.shutdown()
+        if viewer != 'native' or (thread is not None and thread.is_alive()):
+            server.shutdown()
         server.server_close()
+        if thread is not None:
+            thread.join()
         runtime.close()

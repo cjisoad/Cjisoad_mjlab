@@ -1,0 +1,3 @@
+interface:
+  display_name: "MuJoCo 机器狗异步控制实验"
+  short_description: "使用常驻规划智能体与本地执行流水线，实验机器狗观测、推理与动作重叠"
