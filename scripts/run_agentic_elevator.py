@@ -27,7 +27,9 @@ def main(argv=None):
     parser.add_argument('--biped-checkpoint-file', type=Path, default=ROOT/'mark/biped_teacher.pt')
     parser.add_argument('--rise-checkpoint-file', type=Path,
         default=ROOT/'logs/rsl_rl/transition_t/2026-10-09_01-13-48_transition_t_direct_4090_20261009/model_30000.pt')
-    parser.add_argument('--down-checkpoint-file', type=Path, default=ROOT/'mark/t_down/candidate.pt')
+    parser.add_argument('--rise-motion-file', type=Path,
+        default=ROOT/'outputs/teacher_endpoint_rise_clearance20mm_20261008/tripod_to_biped_reference.npz')
+    parser.add_argument('--down-checkpoint-file', type=Path, default=ROOT/'mark/down_teacher.pt')
     parser.add_argument('--motion-file', type=Path, default=ROOT/'src/assets/motions/go2/landing_v2/biped_to_tripod_v2.npz')
     parser.add_argument('--entry-bank', type=Path, default=ROOT/'src/assets/motions/go2/landing_v2/biped_entry_v2.npz')
     parser.add_argument('--initial-state', choices=('quadruped', 'biped'), default='quadruped')

@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Go2 Elevator Lab</title>
+  <style>
+    :root{color-scheme:dark;--bg:#171b1d;--panel:#202729;--line:#3b4749;--text:#e7eeee;--muted:#9cabad;--green:#a5dd69;--cyan:#73d5d3;--red:#ee8d77;--amber:#edc66f}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,sans-serif}
+    header{height:58px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 20px}
+    h1{font-size:17px;margin:0;font-weight:650}.status{display:flex;gap:14px;align-items:center;color:var(--muted)}
+    .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--amber);margin-right:7px}.dot.ok{background:var(--green)}.dot.bad{background:var(--red)}
+    button{font:inherit;color:var(--text);background:#303a3c;border:1px solid #566365;border-radius:5px;padding:7px 12px;cursor:pointer}button:hover{border-color:var(--cyan)}
+    main{padding:16px 20px;display:grid;grid-template-columns:minmax(0,1.8fr) minmax(320px,1fr);gap:16px;max-width:1600px;margin:auto}
+    section{min-width:0}.section-head{height:32px;display:flex;align-items:flex-start;justify-content:space-between;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+    .images{display:grid;grid-template-columns:1fr 1fr;gap:10px}.image-wrap{position:relative;background:#0d1011;border:1px solid var(--line);min-height:190px;aspect-ratio:4/3;display:grid;place-items:center;overflow:hidden}
+    .image-wrap img{width:100%;height:100%;object-fit:contain}.tag{position:absolute;left:9px;top:8px;background:#111d;color:var(--text);padding:3px 7px;border-radius:3px;font-size:11px}
+    .below{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px}.readout{border-top:1px solid var(--line);padding-top:10px}.readout h2{font-size:12px;font-weight:600;color:var(--muted);margin:0 0 8px;text-transform:uppercase}
+    .scene-view{position:relative;aspect-ratio:16/9;min-height:250px;background:#0d1011;border:1px solid var(--line);overflow:hidden;cursor:grab;touch-action:none}.scene-view.dragging{cursor:grabbing}.scene-view canvas{width:100%;height:100%;object-fit:contain;pointer-events:none}.scene-note{position:absolute;right:9px;bottom:8px;background:#111d;color:var(--muted);padding:4px 7px;border-radius:3px;font-size:11px}
+    .keys{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}.key{border:1px solid #465355;border-radius:4px;text-align:center;padding:5px 2px;color:var(--text);font-size:12px}.key.active{border-color:var(--green);color:var(--green);background:#273522}
+    .readout p{margin:5px 0;color:var(--muted)}.readout strong{font-weight:550;color:var(--text)}
+    .data{border:1px solid var(--line);background:#111617;min-height:170px;max-height:360px;overflow:auto;padding:10px;font:11px/1.45 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:#cae2d9}
+    .controls{display:flex;flex-direction:column;gap:4px;max-height:245px;overflow:auto}.control{display:grid;grid-template-columns:120px minmax(0,1fr) auto;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #30393b}.control b{color:var(--cyan);font-weight:600}.control span{color:var(--muted);font:11px ui-monospace,monospace}.control button{padding:3px 8px;font-size:11px}
+    @media(max-width:900px){main{grid-template-columns:1fr;padding:12px}.status{gap:8px}header{padding:0 12px}.data{max-height:280px}}
+    @media(max-width:560px){.images{grid-template-columns:1fr}.image-wrap{min-height:230px}.below{grid-template-columns:1fr}.status #sim-time{display:none}}
+  </style>
+</head>
+<body tabindex="0">
+  <header>
+    <h1>Go2 / Three-Floor Elevator</h1>
+    <div class="status"><span><i class="dot" id="health-dot"></i><span id="health">Connecting</span></span><span id="owner">Owner: --</span><span id="sim-time">Sim: 0.00 s</span><button id="reset">Reset</button></div>
+  </header>
+  <main>
+    <section>
+      <div class="section-head"><span>Robot camera observation</span><span id="frame-status">Waiting for frame</span></div>
+      <div class="images">
+        <div class="image-wrap"><span class="tag">RGB</span><img id="rgb" alt="Robot camera RGB observation"></div>
+        <div class="image-wrap"><span class="tag">Depth visualization</span><img id="depth" alt="Robot camera depth visualization"></div>
+      </div>
+      <div class="section-head" style="margin-top:14px"><span>Third-person MuJoCo scene</span><span><span id="scene-fps">-- FPS</span> · <span id="scene-status">Rendering</span> · drag to orbit · wheel to zoom <button id="camera-reset">Reset camera</button></span></div>
+      <div class="scene-view" id="scene-view"><canvas id="scene" width="640" height="360" aria-label="Draggable third-person MuJoCo scene"></canvas><span class="scene-note">Left click: press · Left drag: orbit · Right drag: pan</span></div>
+      <div class="below">
+        <div class="readout">
+          <h2>Keyboard</h2>
+          <div class="keys"><span class="key" data-key="w">W · Forward</span><span class="key" data-key="s">S · Back</span><span class="key" data-key="a">A · Turn left</span><span class="key" data-key="d">D · Turn right</span><span class="key" data-key="ArrowUp">↑ · FR y+</span><span class="key" data-key="ArrowDown">↓ · FR y−</span><span class="key" data-key="ArrowLeft">← · FR x−</span><span class="key" data-key="ArrowRight">→ · FR x+</span><span class="key" data-key="q">Q · Raise FR</span><span class="key" data-key="e">E · Lower FR</span><span class="key" data-key="r">R · Default FR</span><span class="key" data-key=" ">Space · Pause</span></div>
+          <p>Commands run while a key is held. Releasing all keys stops the robot and pauses simulation time.</p>
+        </div>
+        <div class="readout">
+          <h2>Robot state</h2>
+          <p>Base <strong id="base-pos">--</strong></p><p>FR foot <strong id="fr-pos">--</strong></p><p>FR target <strong id="fr-target">[0, 0, 0]</strong></p><p>Elevator <strong id="elevator">--</strong></p><p id="events">No recent events</p>
+        </div>
+      </div>
+    </section>
+    <section>
+      <div class="section-head"><span>Latest structured observation</span><span id="image-meta">RGBD: --</span></div>
+      <pre class="data" id="packet">Waiting for observation...</pre>
+      <div class="section-head" style="margin-top:14px"><span>Control surfaces · world coordinates</span><span>Simulation truth</span></div>
+      <div class="controls" id="controls"></div>
+    </section>
+  </main>
+  <script>
+    const held=new Set(), target=[0,0,0], consumer='manual-browser';
+    let cursor=null, loopRunning=false, polling=false, sceneLoading=false, drag=null, sceneTimer=null, sceneRetryMs=0, sceneRequestStarted=0;
+    const byId=id=>document.getElementById(id);
+    const sceneFrameTimes=[];
+    const sceneCanvas=byId('scene'), sceneContext=sceneCanvas.getContext('2d',{alpha:false});
+    const camera={azimuth:145,elevation:-25,distance:9.5,x:4.6,y:-1,z:.7};
+    const roundVec=v=>Array.isArray(v)?'['+v.map(x=>Number(x).toFixed(3)).join(', ')+']':'--';
+    async function post(path,value){
+      const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});
+      const body=await response.json();if(!response.ok)throw new Error(body.error||response.statusText);return body;
+    }
+    function showPacket(packet){
+      if(!packet)return;
+      const state=packet.observation||packet, robot=state.robot||{};
+      byId('owner').textContent='Owner: '+(robot.fsm?.owner||packet.owner_after||'--');
+      byId('sim-time').textContent='Sim: '+Number(state.sim_time??packet.sim_time??0).toFixed(2)+' s';
+      byId('base-pos').textContent=roundVec(robot.position_w);
+      byId('fr-pos').textContent=roundVec(robot.fr_position_w);
+      byId('fr-target').textContent=roundVec(target);
+      const lift=state.controls?.find(c=>c.id==='cab_f1');
+      byId('elevator').textContent=packet.elevator?`floor ${packet.elevator.floor}, target ${packet.elevator.target}, ${packet.elevator.moving?'moving':'stopped'}`:(lift?'controls available':'--');
+      byId('packet').textContent=JSON.stringify(state,null,2);
+      byId('image-meta').textContent='RGBD: '+(state.image_status||'--');
+      if(state.image_error)byId('frame-status').textContent=state.image_error;
+      if(packet.events?.length)byId('events').textContent=packet.events.map(e=>`${e.type}: ${e.button||''}`).join(' · ');
+      renderControls(state.controls||[]);
+    }
+    function renderControls(controls){
+      byId('controls').replaceChildren(...controls.map(c=>{
+        const row=document.createElement('div');row.className='control';
+        const name=document.createElement('b');name.textContent=c.id;
+        const pos=document.createElement('span');pos.textContent=roundVec(c.surface_position_w);
+        const press=document.createElement('button');press.type='button';press.textContent='Press';press.setAttribute('aria-label',`Press ${c.id}`);
+        press.addEventListener('click',()=>pressButton(c.id));
+        row.append(name,pos,press);return row;
+      }));
+    }
+    async function loadFrame(frame){
+      const resources=frame.resources||{};
+      for(const [name,element] of [['rgb',byId('rgb')],['depth_visualization',byId('depth')]]){
+        if(!resources[name])continue;
+        const response=await fetch(resources[name].uri);if(!response.ok)continue;
+        const url=URL.createObjectURL(await response.blob());
+        if(element.dataset.objectUrl)URL.revokeObjectURL(element.dataset.objectUrl);
+        element.dataset.objectUrl=url;element.src=url;
+      }
+      byId('frame-status').textContent=`frame ${frame.frame_seq} · sim ${Number(frame.capture_sim_time).toFixed(2)} s`;
+      byId('image-meta').textContent=`RGBD ${frame.width}×${frame.height} · depth ${frame.depth_convention||'optical_z'}`;
+    }
+    async function pollObservation(){
+      if(polling)return;polling=true;
+      try{
+        const packet=await post('/observe',{consumer_id:consumer,cursor,max_frames:2});
+        cursor=packet.next_cursor;showPacket(packet);
+        for(const frame of packet.frames||[])await loadFrame(frame);
+        if(packet.frames?.length)await post('/ack',{consumer_id:consumer,cursor});
+      }catch(error){byId('frame-status').textContent=error.message;}
+      finally{polling=false;}
+    }
+    async function refreshScene(){
+      if(sceneLoading)return;clearTimeout(sceneTimer);sceneTimer=null;sceneLoading=true;sceneRequestStarted=performance.now();
+      try{
+        const query=new URLSearchParams(camera);
+        const response=await fetch('/scene.png?'+query,{cache:'no-store'});if(!response.ok)throw new Error((await response.json()).error||response.statusText);
+        const bitmap=await createImageBitmap(await response.blob());
+        sceneContext.drawImage(bitmap,0,0,sceneCanvas.width,sceneCanvas.height);bitmap.close();
+        const now=performance.now();sceneFrameTimes.push(now);
+        while(sceneFrameTimes.length&&sceneFrameTimes[0]<now-1000)sceneFrameTimes.shift();
+        byId('scene-fps').textContent=`${sceneFrameTimes.length} FPS`;
+        byId('scene-status').textContent=`${camera.distance.toFixed(1)} m`;
+        sceneRetryMs=0;
+      }catch(error){byId('scene-status').textContent=error.message;sceneRetryMs=500;}
+      finally{
+        sceneLoading=false;
+        if(!document.hidden){
+          const frameDelay=Math.max(0,1000/15-(performance.now()-sceneRequestStarted));
+          sceneTimer=setTimeout(refreshScene,Math.max(sceneRetryMs,frameDelay));
+        }
+      }
+    }
+    const sceneView=byId('scene-view');
+    async function pressButton(button){
+      try{
+        const result=await post('/button',{button});
+        byId('scene-status').textContent=`Pressed ${button}`;
+        showPacket(result.observation);
+        if(result.events?.length)byId('events').textContent=result.events.map(e=>`${e.type}: ${e.button||''}`).join(' · ');
+      }catch(error){byId('scene-status').textContent=error.message;}
+    }
+    async function clickSceneButton(clientX,clientY){
+      const bounds=sceneView.getBoundingClientRect(), aspect=16/9;
+      let width=bounds.width,height=width/aspect;
+      if(height>bounds.height){height=bounds.height;width=height*aspect;}
+      const left=bounds.left+(bounds.width-width)/2,top=bounds.top+(bounds.height-height)/2;
+      const x=(clientX-left)/width,y=1-(clientY-top)/height;
+      if(x<0||x>1||y<0||y>1)return;
+      try{
+        const result=await post('/scene-click',{camera,x,y});
+        byId('scene-status').textContent=result.button?`Pressed ${result.button}`:'No button at cursor';
+        if(result.observation)showPacket(result.observation);
+        if(result.events?.length)byId('events').textContent=result.events.map(e=>`${e.type}: ${e.button||''}`).join(' · ');
+      }catch(error){byId('scene-status').textContent=error.message;}
+    }
+    sceneView.addEventListener('pointerdown',event=>{
+      if(event.button!==0&&event.button!==2)return;
+      drag={id:event.pointerId,button:event.button,x:event.clientX,y:event.clientY,startX:event.clientX,startY:event.clientY,moved:false};
+      sceneView.setPointerCapture(event.pointerId);sceneView.classList.add('dragging');event.preventDefault();
+    });
+    sceneView.addEventListener('pointermove',event=>{
+      if(!drag||drag.id!==event.pointerId)return;
+      const dx=event.clientX-drag.x,dy=event.clientY-drag.y;drag.x=event.clientX;drag.y=event.clientY;
+      if(Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)>3)drag.moved=true;
+      if(!drag.moved)return;
+      if(drag.button===2){
+        const angle=camera.azimuth*Math.PI/180,scale=camera.distance*.0015;
+        camera.x+=(-dx*Math.cos(angle)+dy*Math.sin(angle))*scale;
+        camera.y+=(-dx*Math.sin(angle)-dy*Math.cos(angle))*scale;
+        camera.z=Math.max(-3,Math.min(14,camera.z+dy*scale));
+      }else{
+        camera.azimuth=(camera.azimuth+dx*.35+360)%360;
+        camera.elevation=Math.max(-80,Math.min(80,camera.elevation-dy*.25));
+      }
+      refreshScene();
+    });
+    const endDrag=event=>{
+      if(drag?.id!==event.pointerId)return;
+      const click=drag.button===0&&!drag.moved;
+      drag=null;sceneView.classList.remove('dragging');
+      if(click)clickSceneButton(event.clientX,event.clientY);
+    };
+    sceneView.addEventListener('pointerup',endDrag);sceneView.addEventListener('pointercancel',endDrag);
+    sceneView.addEventListener('contextmenu',event=>event.preventDefault());
+    sceneView.addEventListener('wheel',event=>{event.preventDefault();camera.distance=Math.max(2,Math.min(40,camera.distance*Math.exp(event.deltaY*.001)));refreshScene();},{passive:false});
+    byId('camera-reset').addEventListener('click',()=>{Object.assign(camera,{azimuth:145,elevation:-25,distance:9.5,x:4.6,y:-1,z:.7});refreshScene();});
+    document.addEventListener('visibilitychange',()=>{
+      if(document.hidden){clearTimeout(sceneTimer);sceneTimer=null;}
+      else if(!sceneLoading)refreshScene();
+    });
+    function commandFor(dt){
+      const direction=(positive,negative)=>Number(held.has(positive))-Number(held.has(negative));
+      if(held.has('r'))target.splice(0,3,0,0,0);
+      target[0]=Math.max(-.05,Math.min(.30,target[0]+direction('ArrowRight','ArrowLeft')*.12*dt));
+      target[1]=Math.max(-.10,Math.min(.10,target[1]+direction('ArrowUp','ArrowDown')*.12*dt));
+      target[2]=Math.max(0,Math.min(.72,target[2]+direction('q','e')*.18*dt));
+      return {cmd_v:[direction('w','s')*.28,direction('ArrowUp','ArrowDown')*.12,direction('a','d')*.55],cmd_p:[...target],t:.1};
+    }
+    async function controlLoop(){
+      if(loopRunning)return;loopRunning=true;let last=performance.now(),moved=false;
+      try{
+        while(held.size){
+          const now=performance.now(),dt=Math.min(.1,Math.max(.02,(now-last)/1000));last=now;
+          const result=await post('/action',commandFor(dt));showPacket(result);moved=true;
+        }
+        if(moved){const result=await post('/action',{cmd_v:[0,0,0],cmd_p:[...target],t:.1});showPacket(result);}
+      }catch(error){byId('health').textContent=error.message;byId('health-dot').className='dot bad';held.clear();}
+      finally{loopRunning=false;}
+    }
+    const supported=new Set(['w','s','a','d','q','e','r','ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ']);
+    window.addEventListener('keydown',event=>{
+      if(event.target.closest?.('button,input,textarea,select,[contenteditable="true"]'))return;
+      const key=event.key===' '||event.code==='Space'?' ':event.key.length===1?event.key.toLowerCase():event.key;
+      if(!supported.has(key))return;event.preventDefault();
+      if(key===' '){held.clear();return;}
+      held.add(key);document.querySelector(`[data-key="${key}"]`)?.classList.add('active');controlLoop();
+    });
+    window.addEventListener('keyup',event=>{
+      const key=event.key===' '||event.code==='Space'?' ':event.key.length===1?event.key.toLowerCase():event.key;
+      held.delete(key);document.querySelector(`[data-key="${key}"]`)?.classList.remove('active');
+    });
+    window.addEventListener('blur',()=>{held.clear();document.querySelectorAll('.key.active').forEach(e=>e.classList.remove('active'));});
+    byId('reset').addEventListener('click',async()=>{
+      held.clear();target.splice(0,3,0,0,0);cursor=null;
+      try{showPacket(await post('/reset',{}));await pollObservation();}catch(error){byId('health').textContent=error.message;}
+    });
+    (async()=>{
+      try{await fetch('/health');byId('health').textContent='Connected';byId('health-dot').className='dot ok';await pollObservation();}
+      catch(error){byId('health').textContent=error.message;byId('health-dot').className='dot bad';}
+      refreshScene();setInterval(pollObservation,500);
+    })();
+  </script>
+</body>
+</html>

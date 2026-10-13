@@ -3,9 +3,11 @@ from __future__ import annotations
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import math
+from pathlib import Path
 import re
 import threading
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 
 def make_server(runtime, host='127.0.0.1', port=8766):
@@ -39,6 +41,19 @@ def make_server(runtime, host='127.0.0.1', port=8766):
 
         def do_GET(self):
             path = urlsplit(self.path).path
+            if path == '/':
+                page = Path(__file__).with_name('ui.html').read_bytes()
+                return self._reply(200, page, 'text/html; charset=utf-8')
+            if path == '/scene.png':
+                try:
+                    values = parse_qs(urlsplit(self.path).query, strict_parsing=True)
+                    allowed = {'azimuth', 'elevation', 'distance', 'x', 'y', 'z'}
+                    if values.keys() - allowed or any(len(value) != 1 for value in values.values()):
+                        raise ValueError('invalid camera query')
+                    camera = {key: float(value[0]) for key, value in values.items()}
+                    return self._reply(200, runtime.scene_image(camera), 'image/png')
+                except (ValueError, RuntimeError) as exc:
+                    return self._reply(400, {'error': str(exc)})
             if path == '/health':
                 return self._reply(200, {'ok': True})
             match = re.fullmatch(r'/resources/([a-f0-9]{32})', path)
@@ -61,6 +76,17 @@ def make_server(runtime, host='127.0.0.1', port=8766):
                 path = urlsplit(self.path).path
                 if path == '/action':
                     return self._reply(200, runtime.action(value))
+                if path == '/button':
+                    if set(value) != {'button'} or not isinstance(value['button'], str):
+                        raise ValueError('button requires exactly a button name')
+                    return self._reply(200, runtime.press_button(value['button']))
+                if path == '/scene-click':
+                    if set(value) != {'camera', 'x', 'y'} or not isinstance(value['camera'], dict):
+                        raise ValueError('scene-click requires camera, x, and y')
+                    x, y = float(value['x']), float(value['y'])
+                    if not all(map(math.isfinite, (x, y))) or not (0 <= x <= 1 and 0 <= y <= 1):
+                        raise ValueError('scene click must be inside the viewport')
+                    return self._reply(200, runtime.click_scene(value['camera'], x, y))
                 if path == '/observe':
                     keys = set(value)
                     if keys - {'consumer_id', 'cursor', 'max_frames'}:

@@ -7,6 +7,7 @@ import mujoco
 
 from .buffer import FrameBuffer
 from .controls import BUTTON_NAMES, ControlRegistry
+from .render_worker import RenderWorker
 from .state import StateReader
 
 
@@ -32,6 +33,8 @@ class ObservationService:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.resources = {}
         self.capture = None
+        self.scene_camera = None
+        self.render_worker = RenderWorker() if capture_images else None
         self.episode_id = None
         self.snapshot_id = 0
         self.image_error = None
@@ -68,9 +71,8 @@ class ObservationService:
         if self.capture_images:
             try:
                 if self.capture is None:
-                    from .rgbd import RGBDCapture
-                    self.capture = RGBDCapture(self.model, width=self.width, height=self.height)
-                metadata, blobs = self.capture.capture(data)
+                    self.capture = self.render_worker.call(self._new_rgbd_capture)
+                metadata, blobs = self.render_worker.call(self.capture.capture, data)
                 frame.update(metadata, image_status='ok')
                 for name, (payload, mime, resource_metadata) in blobs.items():
                     import uuid
@@ -87,6 +89,10 @@ class ObservationService:
                 self.image_error = frame['image_error']
         self.buffer.append(frame)
         self._cleanup_resources()
+
+    def _new_rgbd_capture(self):
+        from .rgbd import RGBDCapture
+        return RGBDCapture(self.model, width=self.width, height=self.height)
 
     def _delete_resources(self):
         for path, _mime in self.resources.values():
@@ -127,7 +133,38 @@ class ObservationService:
         path, mime = self.resources[resource_id]
         return path.read_bytes(), mime
 
+    def render_scene(self, data, camera=None):
+        if self.render_worker is None:
+            self.render_worker = RenderWorker()
+        return self.render_worker.call(self._render_scene, data, camera)
+
+    def _render_scene(self, data, camera=None):
+        if self.scene_camera is None:
+            from .scene_camera import SceneCamera
+            self.scene_camera = SceneCamera(self.model)
+        return self.scene_camera.render(data, camera)
+
+    def pick_scene_button(self, data, camera, relx, rely):
+        if self.render_worker is None:
+            self.render_worker = RenderWorker()
+        return self.render_worker.call(self._pick_scene_button, data, camera, relx, rely)
+
+    def _pick_scene_button(self, data, camera, relx, rely):
+        if self.scene_camera is None:
+            from .scene_camera import SceneCamera
+            self.scene_camera = SceneCamera(self.model)
+        return self.scene_camera.pick_button(data, camera, relx, rely)
+
     def close(self):
+        if self.render_worker is not None:
+            self.render_worker.call(self._close_renderers)
+            self.render_worker.close()
+            self.render_worker = None
+
+    def _close_renderers(self):
         if self.capture is not None:
             self.capture.close()
             self.capture = None
+        if self.scene_camera is not None:
+            self.scene_camera.close()
+            self.scene_camera = None

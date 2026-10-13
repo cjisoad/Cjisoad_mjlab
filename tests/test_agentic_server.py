@@ -27,6 +27,15 @@ class Runtime:
         if resource_id != 'a' * 32:
             raise KeyError(resource_id)
         return b'frame-resource', 'image/png'
+    def scene_image(self, camera):
+        self.calls.append(('scene_image', camera))
+        return b'scene-frame'
+    def press_button(self, button):
+        self.calls.append(('press_button', button))
+        return {'button': button}
+    def click_scene(self, camera, x, y):
+        self.calls.append(('click_scene', camera, x, y))
+        return {'button': 'call_up_f1'}
 
 
 @pytest.fixture
@@ -58,6 +67,42 @@ def test_action_observe_ack_reset_and_resource(endpoint):
         assert response.headers['Content-Type'] == 'image/png'
         assert response.read() == b'frame-resource'
     assert [call[0] for call in runtime.calls] == ['action', 'observe', 'ack', 'reset']
+
+
+def test_root_serves_keyboard_and_observation_ui(endpoint):
+    base, _ = endpoint
+    with urlopen(base + '/') as response:
+        page = response.read().decode()
+        assert response.headers['Content-Type'].startswith('text/html')
+        assert 'Go2 / Three-Floor Elevator' in page
+        assert '/action' in page and '/observe' in page
+        assert '/scene-click' in page and "post('/button'" in page
+
+
+def test_scene_image_accepts_draggable_camera_parameters(endpoint):
+    base, runtime = endpoint
+    with urlopen(base + '/scene.png?azimuth=42&elevation=-18&distance=12') as response:
+        assert response.headers['Content-Type'] == 'image/png'
+        assert response.read() == b'scene-frame'
+    assert runtime.calls[-1] == ('scene_image', {'azimuth': 42., 'elevation': -18., 'distance': 12.})
+
+
+def test_mouse_button_press_and_scene_pick(endpoint):
+    base, runtime = endpoint
+    assert json.load(post(base, '/button', {'button': 'call_up_f1'})) == {'button': 'call_up_f1'}
+    assert json.load(post(base, '/scene-click', {
+        'camera': {'azimuth': 42}, 'x': .25, 'y': .75})) == {'button': 'call_up_f1'}
+    assert runtime.calls == [
+        ('press_button', 'call_up_f1'),
+        ('click_scene', {'azimuth': 42}, .25, .75),
+    ]
+
+
+def test_scene_click_rejects_out_of_viewport_coordinates(endpoint):
+    base, _ = endpoint
+    with pytest.raises(HTTPError) as error:
+        post(base, '/scene-click', {'camera': {}, 'x': 1.1, 'y': .5})
+    assert error.value.code == 400
 
 
 def test_unexpected_fields_unknown_path_and_unsafe_bind_rejected(endpoint):

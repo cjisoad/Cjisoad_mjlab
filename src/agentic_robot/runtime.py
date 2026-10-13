@@ -10,6 +10,7 @@ import torch
 
 from src.tasks.transition_t import terminations
 from .elevator_adapter import ElevatorAdapter
+from .observation.controls import BUTTON_NAMES
 
 QUADRUPED, RISE, BIPED, DOWN = 0, 2, 3, 4
 OWNER_NAMES = {QUADRUPED: 'QUADRUPED', RISE: 'RISE', BIPED: 'BIPED', DOWN: 'DOWN'}
@@ -136,6 +137,31 @@ class AgenticRuntime:
         if self.observation is None:
             raise KeyError('observation resources unavailable')
         return self.observation.resource(resource_id)
+
+    def scene_image(self, camera=None):
+        if self.observation is None:
+            raise RuntimeError('observation service is unavailable')
+        with self.lock:
+            self.adapter.sync()
+            return self.observation.render_scene(self.adapter.data, camera)
+
+    def click_scene(self, camera, relx, rely):
+        if self.observation is None:
+            raise RuntimeError('observation service is unavailable')
+        with self.lock:
+            self.adapter.sync()
+            button = self.observation.pick_scene_button(self.adapter.data, camera, relx, rely)
+            if button is None:
+                return {'button': None}
+            return {'button': button, **self.press_button(button)}
+
+    def press_button(self, button):
+        if button not in BUTTON_NAMES:
+            raise ValueError(f'unknown button: {button}')
+        with self.lock:
+            self.adapter.controller.mouse_press(button)
+            return {'button': button, **self.action({
+                'cmd_v': [0, 0, 0], 'cmd_p': [0, 0, 0], 't': .4})}
 
     def action(self, command):
         velocity, position, duration = validate_command(command)
