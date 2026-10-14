@@ -175,11 +175,38 @@ def test_full_chain_source_teacher_applies_original_targets(ready_chain, monkeyp
     assert (action.target_limiter.position[:, 3:6]-before[:, 3:6]).abs().max() < .001
 
 
-@pytest.mark.parametrize('phase,enabled', [(0, True), (1, True), (2, True),
+@pytest.mark.parametrize('phase,blend,enabled', [(0, 0., False), (0, 0., True),
+    (1, 0., True), (2, .5, True), (2, .999, True), (3, .999, True),
+    (4, .4, False)])
+def test_full_chain_initial_fr_lift_applies_original_targets(ready_chain, phase, blend, enabled):
+    env, _, action, term, *_ = ready_chain
+    env.action_manager.process_action(torch.zeros(1, 12))
+    term.phase[:] = phase
+    term.blend[:] = blend
+    term.enabled[:] = enabled
+    previous = action.target_limiter.position.clone()
+    selected = torch.full((1, 12), .8)
+    action._write_target(selected)
+    expected = action.default_angles + action.cfg.scale * selected + action.motor_offsets
+    torch.testing.assert_close(action._entity.data.joint_pos_target[:, action.joint_ids], expected)
+    torch.testing.assert_close(action.target_limiter.position, expected)
+    torch.testing.assert_close(action.target_limiter.velocity,
+        ((expected-previous)/env.physics_dt).clamp(
+            -action.target_limiter.velocity_limits, action.target_limiter.velocity_limits))
+    torch.testing.assert_close(action.raw_action, selected)
+    torch.testing.assert_close(env.action_manager.action, selected)
+
+
+@pytest.mark.parametrize('phase,enabled', [(1, True), (2, True),
     (3, True), (4, False), (5, False)])
 def test_full_chain_fr_manipulation_keeps_governor(ready_chain, phase, enabled):
     env, _, action, term, *_ = ready_chain
     env.action_manager.process_action(torch.zeros(1, 12))
+    # Finish the initial lift before retargeting or returning. Once enabled,
+    # the governor must stay active through those later support phases.
+    term.phase[:] = fsm.HOLD
+    term.blend[:] = 1.
+    action._write_target(torch.zeros(1, 12))
     term.phase[:] = phase
     term.enabled[:] = enabled
     before = action.target_limiter.position.clone()
@@ -196,8 +223,11 @@ def test_full_chain_fr_manipulation_keeps_governor(ready_chain, phase, enabled):
 
 def test_full_chain_four_foot_support_releases_governor_after_return(ready_chain):
     env, _, action, term, *_ = ready_chain
-    from src.tasks.loco_pedipulation.mdp.commands import QUAD, RETURN
+    from src.tasks.loco_pedipulation.mdp.commands import QUAD, REACH, RETURN
     env.action_manager.process_action(torch.zeros(1, 12))
+    term.phase[:] = fsm.HOLD
+    term.blend[:] = 1.
+    action._write_target(torch.zeros(1, 12))
     term.phase[:] = RETURN
     term.enabled[:] = False
     action._write_target(torch.full((1, 12), .8))
@@ -205,6 +235,45 @@ def test_full_chain_four_foot_support_releases_governor_after_return(ready_chain
     term.phase[:] = QUAD
     action._write_target(torch.full((1, 12), .8))
     torch.testing.assert_close(action.target_limiter.position, action.default_angles + .2)
+    term.phase[:] = REACH
+    term.blend[:] = .5
+    term.enabled[:] = True
+    action._write_target(torch.full((1, 12), -.8))
+    torch.testing.assert_close(action.target_limiter.position, action.default_angles - .2)
+
+
+def test_full_chain_completed_fr_lift_enables_governor_from_last_target(ready_chain):
+    env, _, action, term, *_ = ready_chain
+    from src.tasks.loco_pedipulation.mdp.commands import REACH
+    env.action_manager.process_action(torch.zeros(1, 12))
+    term.phase[:] = REACH
+    term.blend[:] = .99
+    action._write_target(torch.full((1, 12), .8))
+    before = action.target_limiter.position.clone()
+    velocity = action.target_limiter.velocity.clone()
+    term.phase[:] = fsm.HOLD
+    term.blend[:] = 1.
+    action._write_target(torch.full((1, 12), -4.))
+    assert (action.target_limiter.position[:, 3:6]-before[:, 3:6]).abs().max() < .02
+    assert ((action.target_limiter.velocity-velocity).abs()
+        <= action.target_limiter.acceleration_limits*env.physics_dt+1e-6).all()
+
+
+def test_full_chain_reset_releases_fr_governor_for_next_lift(ready_chain):
+    env, wrapped, action, term, *_ = ready_chain
+    from src.tasks.loco_pedipulation.mdp.commands import REACH
+    env.action_manager.process_action(torch.zeros(1, 12))
+    term.phase[:] = fsm.HOLD
+    term.blend[:] = 1.
+    action._write_target(torch.full((1, 12), .8))
+    wrapped.reset()
+    env.action_manager.process_action(torch.zeros(1, 12))
+    term.phase[:] = REACH
+    term.blend[:] = .5
+    selected = torch.full((1, 12), .8)
+    action._write_target(selected)
+    torch.testing.assert_close(action.target_limiter.position,
+        action.default_angles + action.cfg.scale*selected + action.motor_offsets)
 
 
 def test_full_chain_velocity_input_matches_source_command_ramp(ready_chain):

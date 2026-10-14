@@ -224,7 +224,7 @@ class KeyboardTransitionCommand(LocoPedipulationTeacherCommand):
       trigger_height=self.trigger_height, trigger_hold=float(self.trigger_elapsed[world]),
       progress=float(self.progress[world]), standing_hold=float(self.candidate_elapsed[world]),
       standing_bad_samples=int(self.candidate_bad_samples[world]),
-      xy_error=float(metrics['xy_error'][world]),
+      xy_error=float(metrics['xy_error'][world]), horizontal_speed=float(metrics['horizontal_speed'][world]),
       fr_error=float(self.fr_error[world].norm()), feet_rms=float(metrics['feet_rms'][world]), missing=missing)
 
 
@@ -277,10 +277,22 @@ class KeyboardTransitionAction(PedipulationPositionAction):
   def __init__(self, cfg, env):
     super().__init__(cfg, env)
     self.teacher_delay = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+    # Full-chain playback uses endpoint teachers by default.  Distillation can
+    # explicitly disable this replacement so a supplied student action reaches
+    # the same limiter/delay path while the FSM still owns the state machine.
+    self.use_teacher_policy = True
 
   @torch.inference_mode()
   def process_actions(self, actions):
     term = self._env.command_manager.get_term('twist')
+    if not self.use_teacher_policy:
+      # Preserve the endpoint/transition timing contract while replacing only
+      # the policy source. Endpoint owners retain the configured substep delay;
+      # transition owners continue to use the transition actor's no-delay path.
+      self.teacher_delay[:] = term.owner != TRANSITION
+      super().process_actions(actions)
+      self._env.action_manager.action.copy_(self.raw_action)
+      return
     selected = actions.clamp(-10., 10.).clone()
     self.teacher_delay[:] = term.owner != TRANSITION
     for teacher, state in ((self.source_teacher, TRIPOD), (self.biped_teacher, BIPED)):

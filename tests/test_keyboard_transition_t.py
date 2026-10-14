@@ -198,10 +198,18 @@ class KeyboardTransitionTests(unittest.TestCase):
     module = backend()
     metrics = {name: torch.tensor([value]) for name, value in dict(
       orientation_error=.03, height_error=.008, xy_error=.01, feet_rms=.144,
-      linear_speed=.6, angular_speed=1.2, rear_supported=False, front_clear=False,
+      horizontal_speed=.05, linear_speed=.6, angular_speed=1.2, rear_supported=False, front_clear=False,
       joint_speed=25.).items()}
     self.assertTrue(torch.stack(tuple(module.standing_conditions(metrics).values())).all())
-    metrics['xy_error'][:] = .09
+    metrics['xy_error'][:] = .21
+    self.assertFalse(torch.stack(tuple(module.standing_conditions(metrics).values())).all())
+
+  def test_horizontal_motion_blocks_handoff_despite_relaxed_position(self):
+    module = backend()
+    metrics = {name: torch.tensor([value]) for name, value in dict(
+      orientation_error=.03, height_error=.008, xy_error=.12, horizontal_speed=.15).items()}
+    self.assertTrue(torch.stack(tuple(module.standing_conditions(metrics).values())).all())
+    metrics['horizontal_speed'][:] = .151
     self.assertFalse(torch.stack(tuple(module.standing_conditions(metrics).values())).all())
 
   def test_transition_timeout_does_not_force_biped_handoff(self):
@@ -239,7 +247,7 @@ class KeyboardTransitionTests(unittest.TestCase):
     term.candidate_elapsed[0] = .96
     metrics = {name: torch.tensor([value, value]) for name, value in dict(
       orientation_error=.03, height_error=.008, xy_error=.01, feet_rms=.02,
-      linear_speed=.6, angular_speed=1.2, rear_supported=False, front_clear=False,
+      horizontal_speed=.05, linear_speed=.6, angular_speed=1.2, rear_supported=False, front_clear=False,
       joint_speed=25.).items()}
     with patch.object(module, 'endpoint_metrics', return_value=metrics):
       world.common_step_counter += 1; term.advance()
@@ -260,16 +268,24 @@ class KeyboardTransitionTests(unittest.TestCase):
     term.candidate_elapsed[:] = .5
     metrics = {name: torch.tensor([value, value]) for name, value in dict(
       orientation_error=.03, height_error=.008, xy_error=.01, feet_rms=.02,
-      linear_speed=.07, angular_speed=.09, rear_supported=False, front_clear=True,
+      horizontal_speed=.05, linear_speed=.07, angular_speed=.09, rear_supported=False, front_clear=True,
       joint_speed=1.).items()}
     with patch.object(module, 'endpoint_metrics', return_value=metrics):
       term.reset(torch.tensor([1]))
       world.common_step_counter += 1; term.advance()
       self.assertEqual(float(term.candidate_elapsed[1]), 0.)
       self.assertAlmostEqual(float(term.candidate_elapsed[0]), .52)
-      metrics['xy_error'][0] = .09
+      metrics['xy_error'][0] = .21
       world.common_step_counter += 1; term.advance()
       self.assertEqual(float(term.candidate_elapsed[0]), 0.)
+      metrics['xy_error'][0] = .12
+      metrics['horizontal_speed'][0] = .151
+      world.common_step_counter += 1; term.advance()
+      self.assertEqual(float(term.candidate_elapsed[0]), 0.)
+      self.assertIn('horizontal_speed', term.status(0)['missing'])
+      metrics['horizontal_speed'][0] = .05
+      world.common_step_counter += 1; term.advance()
+      self.assertAlmostEqual(float(term.candidate_elapsed[0]), .02)
 
   def test_keyboard_physical_failure_cannot_be_debounced_into_handoff(self):
     module = backend()
@@ -281,7 +297,7 @@ class KeyboardTransitionTests(unittest.TestCase):
     term.candidate_elapsed[0] = .98
     metrics = {name: torch.tensor([value, value]) for name, value in dict(
       orientation_error=.03, height_error=.008, xy_error=.01, feet_rms=.02,
-      linear_speed=.07, angular_speed=.09, rear_supported=True, front_clear=True,
+      horizontal_speed=.05, linear_speed=.07, angular_speed=.09, rear_supported=True, front_clear=True,
       joint_speed=1.).items()}
     with patch.object(module, 'endpoint_metrics', return_value=metrics), \
       patch.object(module.terminations, 'physical_failure', return_value=torch.tensor([True, False])):

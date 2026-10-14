@@ -117,6 +117,7 @@ def print_events(term, events=None):
 
 def run(args):
   import mujoco
+  from src.tasks.transition_t.standing import POSITION_RADIUS, HORIZONTAL_SPEED_LIMIT
   from mjlab.viewer import NativeMujocoViewer
   from keyboard_x11 import X11Keyboard
   keyboard = env = None
@@ -167,12 +168,13 @@ def run(args):
         state = term.status(self.env_idx)
         labels = ('Simulation\nActive policy\nTransition model\nInput\nRequested FR dz\nExecuted FR dz\n'
           'Trigger FR dz\nTrigger hold\nReference progress\nPosition hold\n'
-          'Endpoint XY error\nWorld feet RMS (diagnostic)\nFR error (diagnostic)\nUnmet position/posture gates\nReset')
+          'Endpoint XY error\nHorizontal speed\nWorld feet RMS (diagnostic)\nFR error (diagnostic)\nUnmet standing gates\nReset')
         values = (f"{'PAUSED' if status.paused else 'RUNNING'}\n{state['state']}\n"
           f"transition_t/{paths['transition_t'].name}\n{'ACTIVE' if keyboard.focused else 'INACTIVE'}\n"
           f"{state['requested_dz']:.3f}m\n{state['executed_dz']:.3f}m\n{state['trigger_height']:.3f}m\n"
           f"{state['trigger_hold']:.2f}/0.10s\n{state['progress']:.0%}\n{state['standing_hold']:.2f}/1.00s\n"
-          f"{state['xy_error']:.3f}m / 0.080m\n"
+          f"{state['xy_error']:.3f}m / {POSITION_RADIUS:.3f}m\n"
+          f"{state['horizontal_speed']:.3f}m/s / {HORIZONTAL_SPEED_LIMIT:.3f}m/s\n"
           f"{state['feet_rms']:.3f}m\n{state['fr_error']:.3f}m\n"
           f"{', '.join(state['missing']) or 'none'}\nBackspace")
         viewer.set_texts((mujoco.mjtFontScale.mjFONTSCALE_150.value,
@@ -663,12 +665,24 @@ def load_full_chain(args, *, render_mode=None, configure_env=None):
   _ensure_full_chain_classes()
 
   class FullChainAction(KeyboardTransitionAction):
+    def __init__(self, cfg, env):
+      super().__init__(cfg, env)
+      self._fr_limiter_engaged = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+
+    def reset(self, env_ids=None):
+      super().reset(env_ids)
+      self._fr_limiter_engaged[slice(None) if env_ids is None else env_ids] = False
+
     def _write_target(self, selected_action):
       term = self._env.command_manager.get_term('twist')
-      # Only ordinary four-foot locomotion bypasses the FR governor. Keep
-      # limits through preparation, tripod support, and the whole return;
-      # enabled catches a new FR request before the support FSM advances.
-      source = (term.owner == QUADRUPED) & (term.phase == QUAD) & ~term.enabled
+      quad_teacher = term.owner == QUADRUPED
+      # Let the original teacher complete the first quad-to-tripod lift.
+      # HOLD with full support blend marks completion of that reach. Latch
+      # the governor through later retargets and return until QUAD is restored.
+      self._fr_limiter_engaged[quad_teacher & (term.phase == QUAD)] = False
+      self._fr_limiter_engaged |= (~quad_teacher
+        | ((term.phase == HOLD) & (term.blend >= 1.)))
+      source = quad_teacher & ~self._fr_limiter_engaged
       limiter = self.target_limiter
       if limiter is None or not source.any():
         return super()._write_target(selected_action)
@@ -678,7 +692,7 @@ def load_full_chain(args, *, render_mode=None, configure_env=None):
       super()._write_target(selected_action)
       # The loco teacher was trained without an FR governor. Applying the
       # transition-only FR limits distorts its four-foot walking gait.
-      # Track its actual PD target so tripod support or the next actor starts there,
+      # Track its actual PD target so the completed lift or next actor starts there,
       # with a bounded velocity estimate for the governor's re-entry.
       limiter.position[source] = target
       limiter.velocity[source] = ((target-previous)/limiter.dt).clamp(
