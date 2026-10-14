@@ -1,9 +1,12 @@
 """Smooth terminal position reward, allowing in-place balance steps."""
 import torch
 
-from .standing import (POSITION_RADIUS, advance_standing_hold,
+from .standing import (advance_standing_hold,
   endpoint_metrics, standing_conditions)
 from . import terminations
+
+# Keep shaping width independent of the standing acceptance position tolerance.
+POSITION_REWARD_STD = .08
 
 
 class SustainedStandingReward:
@@ -40,7 +43,7 @@ class SustainedStandingReward:
     self.bad_samples.copy_(bad)
     upright = eligible & (metrics['orientation_error'] < .25) & (metrics['height_error'] < .05)
     # No contact gate or timer ramp: balancing steps keep earning credit.
-    raw = torch.where(upright, torch.exp(-(metrics['xy_error']/POSITION_RADIUS).square()), 0.)
+    raw = torch.where(upright, torch.exp(-(metrics['xy_error']/POSITION_REWARD_STD).square()), 0.)
     self.value[active] = raw[active].to(self.value.dtype)
     self.last_step[active] = env.common_step_counter
     return self.value

@@ -9,7 +9,7 @@ import torch
 
 def metrics(count=2):
   return {k: torch.full((count,), v) for k, v in dict(orientation_error=.1,
-    height_error=.01, xy_error=0., feet_rms=.2, linear_speed=.1, angular_speed=.1,
+    height_error=.01, xy_error=0., feet_rms=.2, horizontal_speed=.05, linear_speed=.1, angular_speed=.1,
     rear_supported=True, front_clear=True, joint_speed=1.).items()}
 
 
@@ -55,11 +55,20 @@ class StandingRewardTests(unittest.TestCase):
     for _ in range(25): self.step()
     self.values['xy_error'][0] = .08
     self.assertAlmostEqual(float(self.step()[0]), float(torch.exp(torch.tensor(-1.))), places=6)
-    self.values['xy_error'][0] = .09
+    self.values['xy_error'][0] = .201
     self.assertGreater(float(self.step()[0]), 0.)
     self.assertEqual(float(self.reward.duration[0]), 0.)
     self.values['xy_error'][0] = 0.
     self.assertEqual(float(self.step()[0]), 1.)
+    self.assertAlmostEqual(float(self.reward.duration[0]), .02)
+
+  def test_speed_resets_acceptance_credit_while_reward_stays_smooth(self):
+    for _ in range(25): self.step()
+    self.values['horizontal_speed'][0] = .151
+    self.assertEqual(float(self.step()[0]), 1.)
+    self.assertEqual(float(self.reward.duration[0]), 0.)
+    self.values['horizontal_speed'][0] = .05
+    self.step()
     self.assertAlmostEqual(float(self.reward.duration[0]), .02)
 
   def test_failure_and_nonfinite_clear_immediately(self):
