@@ -74,3 +74,69 @@ def test_training_updates_gru_and_checkpoint_round_trip(tmp_path):
     restored, metadata = load_student_checkpoint(path, device='cpu')
     assert metadata['stage'] == 'bc'
     torch.testing.assert_close(model(torch.zeros(1, 4, 48))[0], restored(torch.zeros(1, 4, 48))[0])
+
+
+def test_short_episodes_produce_padded_windows_without_crossing_reset():
+    steps = 7
+    data = dict(observations=np.ones((steps, 1, 48), np.float32),
+        actions=np.ones((steps, 1, 12), np.float32),
+        valid=np.array([1, 1, 0, 1, 1, 1, 0], bool)[:, None],
+        done=np.array([0, 0, 1, 0, 0, 0, 1], bool)[:, None],
+        episode_starts=np.array([1, 0, 0, 1, 0, 0, 0], bool)[:, None],
+        category=np.array([4, 4, 4, 5, 5, 5, 5], np.int16)[:, None])
+    data['observations'][:, 0, 0] = np.arange(steps)
+    dataset = ArrayWindowDataset(data, sequence_length=32)
+    assert len(dataset) == 5
+    assert dataset[1]['mask'].sum() == 2
+    assert dataset[2]['mask'].sum() == 1
+    assert dataset[2]['observations'][0, 0] == 3
+    assert dataset[2]['observations'].shape == (32, 48)
+    assert dataset[2]['categories'][0] == 5
+    assert (dataset[2]['categories'][1:] == -1).all()
+    assert not dataset[2]['observations'][1:].any()
+
+
+def test_bc_adds_supervision_for_episode_prefixes(tmp_path):
+    make_dataset(tmp_path/'dataset')
+    dataset = WindowDataset(tmp_path/'dataset', split=0, include_prefix=True)
+    prefixes = [dataset[i] for i in range(len(dataset)) if dataset[i]['mask'].sum() < 4]
+    assert sorted(int(item['mask'].sum()) for item in prefixes) == [1, 2, 3]
+    assert all(item['observations'][0, 0] == 0 for item in prefixes)
+
+
+def test_full_frame_loss_supervises_early_frames_and_ignores_padding():
+    from src.tasks.fsm_student.distillation import masked_sequence_loss
+    prediction = torch.zeros(1, 4, 12, requires_grad=True)
+    target = torch.ones_like(prediction)
+    target[:, 2:] = float('nan')
+    mask = torch.tensor([[True, True, False, False]])
+    loss = masked_sequence_loss(prediction, target, mask)
+    assert loss.item() == pytest.approx(.5)
+    loss.backward()
+    assert prediction.grad[:, :2].abs().sum() > 0
+    assert prediction.grad[:, 2:].abs().sum() == 0
+
+
+def test_full_frame_loss_uses_frame_categories_not_window_anchor():
+    from src.tasks.fsm_student.distillation import masked_sequence_loss
+    prediction = torch.zeros(1, 4, 12)
+    target = torch.zeros_like(prediction)
+    target[:, :3] = 1.
+    mask = torch.ones(1, 4, dtype=torch.bool)
+    categories = torch.tensor([[0, 0, 0, 1]])
+    weights = torch.tensor([1/3, 1.])
+    assert masked_sequence_loss(prediction, target, mask,
+        categories=categories, category_weights=weights).item() == pytest.approx(.25)
+    with pytest.raises(ValueError, match='valid'):
+        masked_sequence_loss(prediction, target, torch.zeros_like(mask))
+
+
+def test_warm_start_timing_is_per_environment_after_each_reset():
+    from src.tasks.fsm_student.distillation import warm_start_mask
+    steps = torch.tensor([0, 49, 50, 70])
+    assert warm_start_mask(steps, step_dt=.02, seconds=1.).tolist() == [True, True, False, False]
+    steps[2] = 0
+    assert warm_start_mask(steps, step_dt=.02, seconds=1.).tolist() == [True, True, True, False]
+    assert not warm_start_mask(steps, step_dt=.02, seconds=0.).any()
+    with pytest.raises(ValueError):
+        warm_start_mask(steps, step_dt=.02, seconds=-1.)

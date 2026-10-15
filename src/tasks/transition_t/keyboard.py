@@ -281,11 +281,14 @@ class KeyboardTransitionAction(PedipulationPositionAction):
     # explicitly disable this replacement so a supplied student action reaches
     # the same limiter/delay path while the FSM still owns the state machine.
     self.use_teacher_policy = True
+    self.teacher_policy_mask = None
 
   @torch.inference_mode()
   def process_actions(self, actions):
     term = self._env.command_manager.get_term('twist')
-    if not self.use_teacher_policy:
+    teacher_mask = (torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
+      if self.use_teacher_policy else self.teacher_policy_mask)
+    if teacher_mask is None:
       # Preserve the endpoint/transition timing contract while replacing only
       # the policy source. Endpoint owners retain the configured substep delay;
       # transition owners continue to use the transition actor's no-delay path.
@@ -293,10 +296,12 @@ class KeyboardTransitionAction(PedipulationPositionAction):
       super().process_actions(actions)
       self._env.action_manager.action.copy_(self.raw_action)
       return
+    if teacher_mask.shape != (self.num_envs,) or teacher_mask.dtype != torch.bool:
+      raise ValueError('Teacher control mask must be boolean with one value per environment')
     selected = actions.clamp(-10., 10.).clone()
     self.teacher_delay[:] = term.owner != TRANSITION
     for teacher, state in ((self.source_teacher, TRIPOD), (self.biped_teacher, BIPED)):
-      ids = (term.owner == state).nonzero().flatten()
+      ids = ((term.owner == state) & teacher_mask).nonzero().flatten()
       if len(ids):
         if teacher is None:
           raise RuntimeError('Load both endpoint teachers before stepping')

@@ -11,7 +11,7 @@ import tempfile
 
 import numpy as np
 import torch
-from torch.utils.data import ConcatDataset, DataLoader, WeightedRandomSampler
+from torch.utils.data import ConcatDataset, DataLoader
 
 ROOT = Path(__file__).resolve().parents[1]
 import sys
@@ -21,7 +21,7 @@ sys.path.insert(0, str(ROOT/'scripts'))
 from src.tasks.fsm_student import GRUStudent, GRUStudentConfig, student_observations
 from src.tasks.fsm_student.distillation import (
     ArrayWindowDataset, WindowDataset, evaluate_epoch, save_metrics,
-    save_student_checkpoint, load_student_checkpoint, train_epoch,
+    save_student_checkpoint, load_student_checkpoint, train_epoch, warm_start_mask,
 )
 from src.tasks.fsm_student.recording import classify_frames
 
@@ -48,6 +48,8 @@ def parse_args(argv=None):
     parser.add_argument('--num-envs', type=positive_int, default=16)
     parser.add_argument('--batch-size', type=positive_int, default=256)
     parser.add_argument('--sequence-length', type=positive_int, default=32)
+    parser.add_argument('--warm-start-seconds', type=float, default=1.,
+        help='Teacher control after every physical reset while the student warms its GRU; 0 disables')
     parser.add_argument('--lr', type=float, default=3e-4)
     parser.add_argument('--dagger-lr', type=float, default=1e-4)
     parser.add_argument('--grad-clip', type=float, default=1.)
@@ -56,6 +58,8 @@ def parse_args(argv=None):
     parser.add_argument('--max-windows', type=positive_int, default=None)
     parser.add_argument('--overwrite', action='store_true')
     args = parser.parse_args(argv)
+    if not math.isfinite(args.warm_start_seconds) or args.warm_start_seconds < 0:
+        parser.error('--warm-start-seconds must be nonnegative and finite')
     for name in ('lr', 'dagger_lr', 'grad_clip'):
         value = getattr(args, name)
         if not math.isfinite(value) or value <= 0:
@@ -96,27 +100,29 @@ def _loader(dataset, batch_size, *, shuffle, seed):
         drop_last=False, generator=generator)
 
 
-def _balanced_loader(dataset, batch_size, *, seed):
-    """Sample category anchors uniformly while retaining all replay states."""
-    categories = np.fromiter((int(dataset[index]['category']) for index in range(len(dataset))),
-        dtype=np.int64, count=len(dataset))
-    counts = np.bincount(categories, minlength=10)
-    if not len(categories) or not np.all(counts[counts > 0] > 0):
+def _balanced_loader(dataset, batch_size, *, seed, shuffle=True):
+    """Balance supervised frames, including context categories and short prefixes."""
+    counts = torch.zeros(10, dtype=torch.long)
+    for index in range(len(dataset)):
+        item = dataset[index]
+        counts += torch.bincount(item['categories'][item['mask']], minlength=10)
+    present = counts > 0
+    if not present.any():
         raise ValueError('Cannot build a category-balanced loader from empty data')
-    weights = 1. / np.maximum(counts[categories], 1)
-    sampler = WeightedRandomSampler(torch.as_tensor(weights, dtype=torch.double),
-        num_samples=len(dataset), replacement=True,
-        generator=torch.Generator().manual_seed(seed))
-    return DataLoader(dataset, batch_size=batch_size, sampler=sampler, num_workers=0,
-        drop_last=False)
+    weights = torch.zeros(10)
+    weights[present] = counts.sum()/(present.sum()*counts[present].float())
+    loader = _loader(dataset, batch_size, shuffle=shuffle, seed=seed)
+    loader.frame_category_weights = weights
+    loader.category_frame_counts = counts.tolist()
+    return loader
 
 
 def _train_bc(args, output):
     seed_everything(args.seed)
     model, manifest = build_model(args.dataset, args.device)
-    train = WindowDataset(args.dataset, split=0, max_windows=args.max_windows)
+    train = WindowDataset(args.dataset, split=0, max_windows=args.max_windows, include_prefix=True)
     validation = WindowDataset(args.dataset, split=1,
-        max_windows=None if args.max_windows is None else max(1, args.max_windows//5))
+        max_windows=None if args.max_windows is None else max(1, args.max_windows//5), include_prefix=True)
     if len(train) == 0 or len(validation) == 0:
         raise ValueError('BC dataset must contain both training and validation windows')
     actual_sequence_length = int(train[0]['observations'].shape[0])
@@ -125,7 +131,7 @@ def _train_bc(args, output):
             f'BC sequence length {args.sequence_length} does not match '
             f'teacher dataset window length {actual_sequence_length}')
     train_loader = _balanced_loader(train, args.batch_size, seed=args.seed)
-    validation_loader = _loader(validation, args.batch_size, shuffle=False, seed=args.seed)
+    validation_loader = _balanced_loader(validation, args.batch_size, shuffle=False, seed=args.seed)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     history = []
     for epoch in range(1, args.epochs+1):
@@ -137,7 +143,10 @@ def _train_bc(args, output):
         print(f'[bc] epoch={epoch}/{args.epochs} train={train_loss:.6f} validation={validation_loss:.6f}', flush=True)
     metrics = {'stage': 'bc', 'history': history, 'dataset': str(Path(args.dataset).resolve()),
         'categories': manifest.get('categories'), 'train_windows': len(train),
-        'validation_windows': len(validation), 'sequence_length': args.sequence_length}
+        'validation_windows': len(validation), 'sequence_length': args.sequence_length,
+        'loss': 'masked_full_frame_smooth_l1', 'balance': 'inverse_supervised_frame_category_frequency',
+        'supervised_category_frame_counts': train_loader.category_frame_counts,
+        'include_episode_prefixes': True}
     save_student_checkpoint(output, model, optimizer=optimizer, stage='bc', epoch=args.epochs,
         metrics=metrics, seed=args.seed)
     save_metrics(Path(output).with_suffix('.metrics.json'), metrics)
@@ -204,6 +213,7 @@ def _atomic_npz(path, data):
         if os.path.exists(temporary): os.unlink(temporary)
 
 
+@torch.no_grad()
 def collect_dagger_rollout(args, model, manifest, iteration, output_dir):
     """Run student actions and label the same pre-step states with frozen teacher."""
     import keyboard_transition_fsm as fsm
@@ -227,6 +237,7 @@ def collect_dagger_rollout(args, model, manifest, iteration, output_dir):
             moving=(iteration % 2 == 0))
         ids = torch.arange(args.num_envs, device=env.device)
         observations=[]; labels=[]; student_outputs=[]; commands=[]; categories=[]; valid=[]; done=[]; starts=[]
+        teacher_controls=[]; episode_steps=[]
         starts_next = np.ones(args.num_envs, dtype=bool)
         for step in range(args.rollout_steps):
             command = scenario.command()
@@ -240,7 +251,15 @@ def collect_dagger_rollout(args, model, manifest, iteration, output_dir):
             student_action, hidden = model(student_obs, hidden)
             if not torch.isfinite(student_action).all():
                 raise FloatingPointError('Student returned nonfinite DAgger actions')
-            _, _, finished, _ = wrapped.step(student_action)
+            teacher_control = warm_start_mask(env.episode_length_buf,
+                step_dt=env.step_dt, seconds=args.warm_start_seconds)
+            teacher_controls.append(teacher_control.cpu().numpy().copy())
+            episode_steps.append(env.episode_length_buf.cpu().numpy().copy())
+            # Endpoint teachers must be injected after wrapper clipping, exactly
+            # as in teacher playback; transition teachers use the routed actor.
+            action.teacher_policy_mask = teacher_control
+            selected = torch.where(teacher_control[:, None], teacher_label, student_action)
+            _, _, finished, _ = wrapped.step(selected)
             finished = finished.detach().cpu().numpy().astype(bool)
             observations.append(student_obs.cpu().numpy().copy())
             labels.append(teacher_label.cpu().numpy().copy())
@@ -261,6 +280,8 @@ def collect_dagger_rollout(args, model, manifest, iteration, output_dir):
             'commands': np.stack(commands), 'category': np.stack(categories),
             'valid': np.stack(valid), 'done': np.stack(done),
             'episode_starts': np.stack(starts),
+            'teacher_control': np.stack(teacher_controls),
+            'episode_steps': np.stack(episode_steps),
             'trajectory_id': np.arange(args.num_envs, dtype=np.int64)+iteration*100000,
             'split': np.zeros(args.num_envs, dtype=np.uint8),
         }
@@ -273,6 +294,12 @@ def collect_dagger_rollout(args, model, manifest, iteration, output_dir):
         return data, path, dict(scenario=scenario_name, steps=args.rollout_steps,
             finished_worlds=int(np.stack(done).sum()), replay_windows=len(ArrayWindowDataset(data,
                 sequence_length=args.sequence_length)),
+            warm_start_seconds=args.warm_start_seconds,
+            teacher_frames=int(data['teacher_control'].sum()),
+            student_frames=int((~data['teacher_control']).sum()),
+            teacher_terminations=int((data['done'] & data['teacher_control']).sum()),
+            student_terminations=int((data['done'] & ~data['teacher_control']).sum()),
+            valid_category_frames=np.bincount(data['category'][data['valid']], minlength=10).tolist(),
             mean_student_teacher_abs=float(action_gap.mean()),
             max_student_teacher_abs=float(action_gap.max()),
             label_sha256=hashlib.sha256(path.read_bytes()).hexdigest())
@@ -297,7 +324,7 @@ def _run_dagger(args, output, *, initial_checkpoint):
     seed_everything(args.seed)
     model, manifest = build_model(args.dataset, args.device)
     model, metadata = load_student_checkpoint(initial_checkpoint, device=args.device)
-    bc = WindowDataset(args.dataset, split=0, max_windows=args.max_windows)
+    bc = WindowDataset(args.dataset, split=0, max_windows=args.max_windows, include_prefix=True)
     if len(bc) == 0:
         raise ValueError('BC dataset is empty')
     bc_sequence_length = int(bc[0]['observations'].shape[0])
@@ -312,6 +339,11 @@ def _run_dagger(args, output, *, initial_checkpoint):
     for iteration in range(1, args.iterations+1):
         data, replay_path, rollout = collect_dagger_rollout(args, model, manifest, iteration, replay_dir)
         replay = ArrayWindowDataset(data, sequence_length=args.sequence_length)
+        if not rollout['student_frames']:
+            raise ValueError('DAgger rollout contains no student-controlled frames; '
+                'increase --rollout-steps or reduce --warm-start-seconds')
+        if not len(replay):
+            raise ValueError('DAgger rollout contains no valid replay frames')
         replay_sets.append(replay)
         combined = ConcatDataset([bc, *(
             [dataset for dataset in replay_sets for _ in range(args.replay_repeat)])])
@@ -324,7 +356,8 @@ def _run_dagger(args, output, *, initial_checkpoint):
             print(f'[dagger] iter={iteration}/{args.iterations} epoch={epoch}/{args.dagger_epochs} loss={loss:.6f} replay={len(replay)}', flush=True)
         iteration_metrics.append(dict(iteration=iteration, replay=str(replay_path), rollout=rollout,
             losses=losses, replay_windows=len(replay),
-            replay_windows_total=sum(len(dataset) for dataset in replay_sets)))
+            replay_windows_total=sum(len(dataset) for dataset in replay_sets),
+            supervised_category_frame_counts=loader.category_frame_counts))
         iteration_path = Path(output).with_suffix(f'.iter{iteration:02d}.pt')
         if iteration_path.exists() and args.overwrite:
             iteration_path.unlink()
@@ -333,7 +366,9 @@ def _run_dagger(args, output, *, initial_checkpoint):
             metrics=iteration_metrics[-1], seed=args.seed)
     metrics={'stage':'dagger','initial_checkpoint':str(Path(initial_checkpoint).resolve()),
         'dataset':str(Path(args.dataset).resolve()),'iterations':iteration_metrics,
-        'sequence_length':args.sequence_length,'replay_repeat':args.replay_repeat}
+        'sequence_length':args.sequence_length,'replay_repeat':args.replay_repeat,
+        'warm_start_seconds':args.warm_start_seconds, 'loss':'masked_full_frame_smooth_l1',
+        'balance':'inverse_supervised_frame_category_frequency'}
     save_student_checkpoint(output, model, stage='dagger', epoch=args.iterations*args.dagger_epochs,
         metrics=metrics, seed=args.seed)
     save_metrics(Path(output).with_suffix('.metrics.json'), metrics)

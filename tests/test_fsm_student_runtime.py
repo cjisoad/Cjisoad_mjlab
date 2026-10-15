@@ -38,3 +38,35 @@ def test_gru_student_observes_real_teacher_worlds_without_reference_inputs():
         assert torch.isfinite(policy(observation)).all()
     finally:
         env.close()
+
+
+def test_keyboard_warm_start_preserves_hidden_and_selects_teacher_per_world(tmp_path):
+    import keyboard_transition_fsm as fsm
+    from src.tasks.fsm_student import GRUStudent, student_observations
+
+    loaded = fsm.load_full_chain(fsm.parse_args(['--device', 'cpu', '--num-envs', '2']))
+    env, wrapped, action, term, rise, down, _ = loaded
+    try:
+        checkpoint = tmp_path/'student.pt'
+        GRUStudent().save(checkpoint)
+        inputs = fsm.FullKeyboardInputs(term)
+        policy = fsm.FullChainStudentPolicy(env, inputs, checkpoint, warm_start_seconds=.04)
+        env.episode_length_buf[:] = torch.tensor([0, 2])
+        action.source_teacher.actions = lambda env, ids: torch.full((len(ids), 12), 3.)
+        out = policy(wrapped.get_observations())
+        assert action.teacher_policy_mask.tolist() == [True, False]
+        action.process_actions(out)
+        torch.testing.assert_close(action._requested_action[0], torch.full((12,), 3.))
+        torch.testing.assert_close(action._requested_action[1], out[1].clamp(-10., 10.))
+        hidden = policy.policy.hidden.clone()
+        env.episode_length_buf[:] = torch.tensor([2, 3])
+        command = torch.tensor(inputs.controller.command).expand(2, -1)
+        expected, _ = policy.policy.model(student_observations(env, command), hidden)
+        actual = policy(wrapped.get_observations())
+        torch.testing.assert_close(actual, expected)
+        assert not action.teacher_policy_mask.any()
+        wrapped.reset()
+        policy(wrapped.get_observations())
+        assert action.teacher_policy_mask.all()
+    finally:
+        env.close()

@@ -1,9 +1,9 @@
 # FSM teacher 的 GRU student
 
-第一版提供网络、观测构造、带记忆的推理接口和权重保存／加载。
+提供网络、观测构造、带记忆的推理接口和权重保存／加载。
 教师数据可通过 [FSM 录制脚本](fsm_teacher_recording.md) 自动采集并生成均衡窗口索引。
 student 的两阶段 BC→DAgger 训练见 [蒸馏说明](fsm_student_distillation.md)。
-`keyboard_transition_fsm.py` 继续执行当前教师链。
+`keyboard_transition_fsm.py` 可执行教师链，也可通过 `--student-checkpoint-file` 加载 student。
 
 ## 网络与动作
 
@@ -80,23 +80,36 @@ actions = policy(obs)  # [num_envs, 12]；此处新建模型尚未训练。
 
 普通命令变化、支撑切换和起身／下降接管不清空记忆。
 只在环境物理复位或开始独立新轨迹时清空。
-当前教师的 `FullChainAction` 会按 owner 覆盖输入动作；上面的推理接口
-用于 student 构建和训练，不能直接把未训练预测送入该教师动作项来执行
-student。后续自主执行需接入正常的公共位置动作项。
+键盘脚本中的 `FullChainStudentPolicy` 已接入 student 控制和逐环境 teacher 暖启动。
+默认每次物理复位后的前 1 秒由 teacher 控制，student 同时更新 hidden；随后交接给 student，
+交接时保留 hidden。在 50 Hz 控制频率下，这对应前 50 个控制周期。
+以下命令可加载已有 BC 权重试用：
+
+```bash
+python scripts/keyboard_transition_fsm.py \
+  --device cuda:0 --initial-state biped \
+  --student-checkpoint-file outputs/fsm_student_analysis_20261015/results/student.bc.pt \
+  --student-warm-start-seconds 1.0
+```
+
+`--student-warm-start-seconds 0` 关闭暖启动。界面显示 `TEACHER WARM-UP` 或 `STUDENT GRU`。
+暖启动发生在物理复位之后，普通 FSM 状态切换不重启暖启动。
+已有权重可直接使用该推理流程；全帧 loss 的学习效果需要重新训练后才会体现。
 
 ## 序列 BC 接口
 
 ```python
 import torch
-import torch.nn.functional as F
+from src.tasks.fsm_student.distillation import masked_sequence_loss
 
 model.train()
 optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
 # obs_seq: [batch, time, 48]
 # teacher_actions: [batch, time, 12]
 # episode_starts: [batch, time]，bool，复位后的第一帧为 True。
+# valid_mask: [batch, time]，bool；右侧补齐的帧为 False。
 predicted, next_hidden = model(obs_seq, episode_starts=episode_starts)
-loss = F.smooth_l1_loss(predicted, teacher_actions)
+loss = masked_sequence_loss(predicted, teacher_actions, valid_mask)
 optimizer.zero_grad()
 loss.backward()
 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -104,7 +117,8 @@ optimizer.step()
 ```
 
 必须保留轨迹的时间顺序，并按连续片段采样。
-网络没有固定的 50 帧窗口；训练片段长度是之后 BC 训练器的参数。
+网络没有固定的 50 帧窗口；当前 BC／DAgger 训练器使用最长 32 帧的有效历史，
+短片段补齐并掩码，所有真实帧参与监督。随机训练窗口之间不继承 hidden。
 对同一环境的连续片段做截断 BPTT 时，可将 `next_hidden.detach()`
 传给下一片段；随机抽取无关片段时不能复用上一批的隐藏状态。
 

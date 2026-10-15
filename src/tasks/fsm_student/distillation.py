@@ -1,7 +1,8 @@
-"""Sequence data, anchor losses, and checkpoint helpers for student distillation."""
+"""Padded episode histories, full-frame losses and distillation checkpoints."""
 from dataclasses import asdict
 from pathlib import Path
 import json
+import math
 import os
 import tempfile
 
@@ -13,7 +14,7 @@ from .observations import observation_contract
 from .policy import GRUStudent, GRUStudentConfig
 
 ACTION_DIM = 12
-DISTILLATION_VERSION = 1
+DISTILLATION_VERSION = 2
 
 
 def _finite(name, value):
@@ -32,23 +33,60 @@ def _check_window(start, stop, data, env):
         raise ValueError('Sequence window crosses an episode reset')
 
 
-def _item(observations, actions, category):
-    obs = torch.from_numpy(np.ascontiguousarray(observations, dtype=np.float32))
-    target = torch.from_numpy(np.ascontiguousarray(actions, dtype=np.float32))
+def _item(observations, actions, categories, *, sequence_length):
+    length = len(observations)
+    obs = torch.zeros(sequence_length, 48)
+    target = torch.zeros(sequence_length, ACTION_DIM)
+    obs[:length] = torch.from_numpy(np.ascontiguousarray(observations, dtype=np.float32))
+    target[:length] = torch.from_numpy(np.ascontiguousarray(actions, dtype=np.float32))
+    labels = torch.full((sequence_length,), -1, dtype=torch.long)
+    labels[:length] = torch.as_tensor(np.asarray(categories).copy(), dtype=torch.long)
     return {'observations': obs, 'actions': target,
-            'category': torch.tensor(int(category), dtype=torch.long)}
+            'category': labels[length-1].clone(), 'categories': labels,
+            'mask': torch.arange(sequence_length) < length}
 
 
 class WindowDataset(Dataset):
     """Lazy-ish indexed access to recorder shards with contiguous GRU history."""
-    def __init__(self, root, *, split=0, max_windows=None):
+    def __init__(self, root, *, split=0, max_windows=None, include_prefix=False):
         self.root = Path(root)
         with np.load(self.root/'windows.npz', allow_pickle=False) as index:
             keys = ('shard', 'env', 'start', 'stop', 'category', 'split', 'trajectory_id')
             values = {key: np.asarray(index[key]) for key in keys}
         if split not in (0, 1):
             raise ValueError('Window split must be 0 (train) or 1 (validation)')
+        lengths = np.unique(values['stop']-values['start'])
+        if len(lengths) != 1 or lengths[0] < 1:
+            raise ValueError('Teacher index must use one positive sequence length')
+        self.sequence_length = int(lengths[0])
         selected = np.flatnonzero(values['split'] == split)
+        self.rows = {key: value[selected] for key, value in values.items()}
+        self._shards = {}
+        for shard in np.unique(self.rows['shard']):
+            path = self.root/f'shard_{int(shard):05d}.npz'
+            if not path.is_file():
+                raise FileNotFoundError(path)
+            with np.load(path, allow_pickle=False) as stored:
+                self._shards[int(shard)] = {key: stored[key] for key in stored.files}
+        if include_prefix:
+            prefixes = []
+            for shard in np.unique(self.rows['shard']):
+                data = self._shards[int(shard)]
+                for env in np.unique(self.rows['env'][self.rows['shard'] == shard]):
+                    start = 0
+                    for step in range(len(data['valid'])):
+                        if data['episode_starts'][step, env]:
+                            start = step
+                        if not data['valid'][step, env] or data['done'][step, env]:
+                            start = step+1
+                            continue
+                        if step+1-start < self.sequence_length:
+                            prefixes.append((int(shard), int(env), start, step+1,
+                                int(data['category'][step, env]), split,
+                                int(data['trajectory_id'][env])))
+            table = np.asarray(prefixes, dtype=np.int64).reshape(-1, len(keys))
+            self.rows = {key: np.concatenate((table[:, i], self.rows[key]))
+                         for i, key in enumerate(keys)}
         if max_windows is not None:
             limit = int(max_windows)
             if limit < 1:
@@ -56,22 +94,16 @@ class WindowDataset(Dataset):
             # Keep a small smoke subset representative of every available
             # category instead of taking the first category block from the
             # recorder's deterministic index order.
+            selected = np.arange(len(self.rows['start']))
             per_category = []
             for category in range(10):
-                rows = selected[values['category'][selected] == category]
+                rows = selected[self.rows['category'][selected] == category]
                 per_category.append(rows)
             selected = np.asarray([row for offset in range(limit)
                 for rows in per_category
                 if offset < len(rows) for row in (rows[offset],)], dtype=np.int64)
             selected = selected[:limit]
-        self.rows = {key: value[selected] for key, value in values.items()}
-        self._shards = {}
-        for shard in np.unique(self.rows['shard']):
-            path = self.root/f'shard_{int(shard):05d}.npz'
-            if not path.is_file():
-                raise FileNotFoundError(path)
-            stored = np.load(path, allow_pickle=False)
-            self._shards[int(shard)] = {key: stored[key] for key in stored.files}
+            self.rows = {key: value[selected] for key, value in self.rows.items()}
         self._validate_rows()
 
     def _validate_rows(self):
@@ -91,7 +123,7 @@ class WindowDataset(Dataset):
         start = int(self.rows['start'][index]); stop = int(self.rows['stop'][index])
         data = self._shards[shard]
         return _item(data['observations'][start:stop, env], data['actions'][start:stop, env],
-            self.rows['category'][index])
+            data['category'][start:stop, env], sequence_length=self.sequence_length)
 
 
 class ArrayWindowDataset(Dataset):
@@ -108,8 +140,10 @@ class ArrayWindowDataset(Dataset):
         done = self.data.get('done', np.zeros(obs.shape[:2], bool))
         starts = self.data.get('episode_starts', np.zeros(obs.shape[:2], bool))
         category = self.data.get('category', np.zeros(obs.shape[:2], np.int16))
-        if valid.shape != obs.shape[:2] or done.shape != valid.shape or starts.shape != valid.shape:
+        if (valid.shape != obs.shape[:2] or done.shape != valid.shape
+                or starts.shape != valid.shape or category.shape != valid.shape):
             raise ValueError('Replay masks must match [time, world]')
+        self.data['category'] = category
         rows = []
         for env in range(obs.shape[1]):
             run = 0
@@ -120,9 +154,8 @@ class ArrayWindowDataset(Dataset):
                     run = 0
                     continue
                 run += 1
-                if run >= self.sequence_length:
-                    rows.append((env, step+1-self.sequence_length, step+1,
-                        int(category[step, env])))
+                rows.append((env, step+1-min(run, self.sequence_length), step+1,
+                    int(category[step, env])))
         self.rows = rows
         for key in ('observations', 'actions'):
             _finite(key, self.data[key])
@@ -133,7 +166,8 @@ class ArrayWindowDataset(Dataset):
     def __getitem__(self, index):
         env, start, stop, category = self.rows[int(index)]
         return _item(self.data['observations'][start:stop, env],
-            self.data['actions'][start:stop, env], category)
+            self.data['actions'][start:stop, env], self.data['category'][start:stop, env],
+            sequence_length=self.sequence_length)
 
 
 def anchor_smooth_l1_loss(predicted, target):
@@ -142,23 +176,64 @@ def anchor_smooth_l1_loss(predicted, target):
     return torch.nn.functional.smooth_l1_loss(predicted[:, -1], target[:, -1])
 
 
+def warm_start_mask(episode_steps, *, step_dt, seconds):
+    """Teacher control is local to each physical episode, including partial resets."""
+    if not math.isfinite(seconds) or seconds < 0 or not math.isfinite(step_dt) or step_dt <= 0:
+        raise ValueError('Warm-start seconds must be nonnegative and step_dt positive')
+    return episode_steps < math.ceil(seconds/step_dt-1e-9)
+
+
+def _supervision_weights(mask, categories=None, category_weights=None):
+    if mask.dtype != torch.bool or not mask.any():
+        raise ValueError('Loss requires at least one valid frame in a boolean mask')
+    if category_weights is None:
+        return torch.ones(int(mask.sum()), device=mask.device)
+    if categories is None or categories.shape != mask.shape:
+        raise ValueError('Per-frame categories must match the valid mask')
+    selected = categories[mask]
+    if ((selected < 0) | (selected >= len(category_weights))).any():
+        raise ValueError('Invalid supervised frame category')
+    weights = category_weights.to(mask.device)[selected]
+    if not torch.isfinite(weights).all() or (weights <= 0).any():
+        raise ValueError('Supervised category weights must be positive and finite')
+    return weights
+
+
+def masked_sequence_loss(predicted, target, mask, *, categories=None, category_weights=None):
+    """Supervise every real frame; padding never enters the loss or its denominator."""
+    if (predicted.ndim != 3 or target.shape != predicted.shape or predicted.shape[-1] != ACTION_DIM
+            or mask.shape != predicted.shape[:2]):
+        raise ValueError('Expected [batch, time, 12] actions and [batch, time] mask')
+    weights = _supervision_weights(mask, categories, category_weights)
+    losses = torch.nn.functional.smooth_l1_loss(predicted[mask], target[mask], reduction='none').mean(-1)
+    return (losses*weights).sum()/weights.sum()
+
+
+def _batch_loss(model, batch, loader, device):
+    observations, target = batch['observations'].to(device), batch['actions'].to(device)
+    mask = batch['mask'].to(device)
+    categories = batch['categories'].to(device)
+    category_weights = getattr(loader, 'frame_category_weights', None)
+    predicted, _ = model(observations)
+    loss = masked_sequence_loss(predicted, target, mask,
+        categories=categories, category_weights=category_weights)
+    mass = float(_supervision_weights(mask, categories, category_weights).sum())
+    return loss, mass
+
+
 def train_epoch(model, loader, optimizer, *, device='cpu', grad_clip=1.0):
     model.train()
     total = 0.; count = 0
     for batch in loader:
-        observations = batch['observations'].to(device)
-        target = batch['actions'].to(device)
-        predicted, _ = model(observations)
-        loss = anchor_smooth_l1_loss(predicted, target)
+        loss, mass = _batch_loss(model, batch, loader, device)
         if not torch.isfinite(loss):
             raise FloatingPointError('Nonfinite distillation loss')
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()
-        size = observations.shape[0]
-        total += float(loss.detach()) * size
-        count += size
+        total += float(loss.detach()) * mass
+        count += mass
     return total / count if count else float('nan')
 
 
@@ -167,13 +242,9 @@ def evaluate_epoch(model, loader, *, device='cpu'):
     model.eval()
     total = 0.; count = 0
     for batch in loader:
-        observations = batch['observations'].to(device)
-        target = batch['actions'].to(device)
-        predicted, _ = model(observations)
-        loss = anchor_smooth_l1_loss(predicted, target)
-        size = observations.shape[0]
-        total += float(loss) * size
-        count += size
+        loss, mass = _batch_loss(model, batch, loader, device)
+        total += float(loss) * mass
+        count += mass
     return total / count if count else float('nan')
 
 
