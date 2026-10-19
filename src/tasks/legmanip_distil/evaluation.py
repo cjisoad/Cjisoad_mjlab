@@ -4,7 +4,41 @@ from pathlib import Path
 
 import torch
 
-from .intent import STAGES
+from .intent import SCENARIOS, STAGES
+
+CONTINUOUS_HOLD_S = .5
+BIPED_CONTACT_GRACE_S = .1
+
+
+def required_holds(scenario):
+    stages = [name for name, _ in SCENARIOS[('quad', 'biped', 'cycle').index(scenario)]]
+    required = ['final_quad_hold']
+    if any(name.startswith('biped') for name in stages):
+        required.append('biped_hold')
+    if 'tripod_operation' in stages:
+        required.append('tripod_hold')
+    return required
+
+
+def update_physical_holds(record, *, stage, gravity, height, contacts, foot_error, dt):
+    """Keep posture continuous, debouncing each hind foot for at most 100 ms.
+
+    Both hind feet must actually have contacted within the grace interval.
+    A missing foot, long flight, or invalid posture cannot satisfy the hold.
+    """
+    in_biped = stage.startswith('biped')
+    ages = record['hind_contact_age']
+    for i in range(2):
+        ages[i] = (0. if bool(contacts[i + 2]) else ages[i] + dt) if in_biped else float('inf')
+    biped = (in_biped and float(gravity[0]) < -.85 and abs(float(gravity[1])) < .25
+             and .4 < height < .65 and max(ages) <= BIPED_CONTACT_GRACE_S + 1.e-9)
+    tripod = (stage == 'tripod_operation' and foot_error < .12
+              and all(bool(contacts[i]) for i in (0, 2, 3)) and not bool(contacts[1]))
+    quadruped = (stage == 'return' and float(gravity[2]) < -.85
+                 and .18 < height < .45 and all(bool(value) for value in contacts))
+    for prefix, good in (('biped', biped), ('tripod', tripod), ('final_quad', quadruped)):
+        record[prefix + '_run'] = record[prefix + '_run'] + dt if good else 0.
+        record[prefix + '_hold'] = max(record[prefix + '_hold'], record[prefix + '_run'])
 
 
 def capture_sample(env):
@@ -50,12 +84,8 @@ def episode_result(record, dt):
         reasons.append('scenario_incomplete')
     if record['deadline']:
         reasons.append('evaluation_deadline')
-    required = ['final_quad_hold']
-    if record['scenario'] != 'quad':
-        required.append('biped_hold')
-    if record['scenario'] != 'biped':
-        required.append('tripod_hold')
-    reasons.extend(name + '_too_short' for name in required if record[name] < .5 - 1.e-6)
+    reasons.extend(name + '_too_short' for name in required_holds(record['scenario'])
+                   if record[name] < CONTINUOUS_HOLD_S - 1.e-6)
     return {
         'scenario': record['scenario'], 'success': not reasons, 'failure_reasons': reasons,
         'script_completed': record['completed'], 'physical_failure': record['physical_failure'],
@@ -65,8 +95,6 @@ def episode_result(record, dt):
         'mean_twist_abs_error': record['velocity_error_sum'] / max(record['steps'], 1),
         'mean_operation_foot_error_m': (record['foot_error_sum'] / record['foot_samples']
                                        if record['foot_samples'] else None),
-        'mean_substep_to_final_target_difference_rad': record['substep_difference_sum'] / max(record['steps'], 1),
-        'max_substep_to_final_target_difference_rad': record['substep_difference_max'],
     }
 
 
@@ -75,7 +103,7 @@ def new_record(scenario, trajectory):
                 deadline=False, biped_hold=0., tripod_hold=0., final_quad_hold=0.,
                 biped_run=0., tripod_run=0., final_quad_run=0.,
                 velocity_error_sum=0., foot_error_sum=0., foot_samples=0,
-                substep_difference_sum=0., substep_difference_max=0.,
+                hind_contact_age=[float('inf'), float('inf')],
                 entry_trajectory=trajectory)
 
 
@@ -84,9 +112,8 @@ def evaluate_policy(*, policy='student', checkpoint=None, scenario='all', episod
                     num_envs=16, max_steps=3000, device='cpu', split='validation', seed=123):
     """Use a disjoint entry split and the same scripted intent for each policy.
 
-    teacher-hold recomputes the frozen teacher on its own visited states and
-    applies only the final target, directly through student PD. Compare it with
-    teacher to quantify the substep execution mismatch in closed loop.
+    The teacher returns native common-coordinate actor requests. Both policies
+    use the same direct position-target hold without a governor or delay.
     """
     from mjlab.envs import ManagerBasedRlEnv
     from mjlab.managers import TerminationTermCfg
@@ -95,7 +122,7 @@ def evaluate_policy(*, policy='student', checkpoint=None, scenario='all', episod
     from .deployment import validate_contract
     from .rl import load_student
 
-    if policy not in ('student', 'teacher', 'teacher-hold'):
+    if policy not in ('student', 'teacher'):
         raise ValueError('Unknown evaluation policy')
     if min(episodes, num_envs, max_steps) < 1 or split not in ('validation', 'final'):
         raise ValueError('Use positive evaluation counts and validation/final entry split')
@@ -121,10 +148,7 @@ def evaluate_policy(*, policy='student', checkpoint=None, scenario='all', episod
             from .teacher import FSMTeacher
             actor = FSMTeacher(env)
         intent = env.command_manager.get_term('intent')
-        action = env.action_manager.get_term('joint_pos')
         results = []
-        timing_by_owner = {str(owner): {'frames': 0, 'sum_abs_rad': 0., 'max_abs_rad': 0.}
-                           for owner in (0, 2, 3, 4)}
         started = time.perf_counter()
 
         def trajectory(index):
@@ -135,8 +159,7 @@ def evaluate_policy(*, policy='student', checkpoint=None, scenario='all', episod
             intent.cfg.scenario = name
             obs, _ = env.reset(seed=seed)
             actor.reset()
-            # Fixed batches keep teacher and teacher-hold initial states and
-            # commands paired even when one execution mode falls earlier.
+            # Fixed seeded batches keep initial states/commands comparable.
             completed = 0
             batch = 0
             while completed < episodes:
@@ -148,21 +171,6 @@ def evaluate_policy(*, policy='student', checkpoint=None, scenario='all', episod
                 records = [new_record(name, trajectory(i)) for i in range(env.num_envs)]
                 for step in range(max_steps):
                     actions = actor(TensorDict(obs, batch_size=[env.num_envs]))
-                    difference = torch.zeros(env.num_envs, device=device)
-                    maximum = difference.clone()
-                    if policy != 'student':
-                        actor.set_control_mask(torch.full((env.num_envs,), policy == 'teacher',
-                                                         device=device, dtype=torch.bool))
-                        deviation = (action.teacher_targets - action.teacher_targets[-1:]).abs()
-                        difference = deviation.mean(dim=(0, 2))
-                        maximum = deviation.amax(dim=(0, 2))
-                        owners = env.command_manager.get_term('twist').owner
-                        for i in range(count):
-                            if active[i]:
-                                stat = timing_by_owner[str(int(owners[i]))]
-                                stat['frames'] += 1
-                                stat['sum_abs_rad'] += float(difference[i])
-                                stat['max_abs_rad'] = max(stat['max_abs_rad'], float(maximum[i]))
                     obs, _, terminated, truncated, _ = env.step(actions)
                     dones = terminated | truncated
                     actor.reset(dones)
@@ -173,21 +181,11 @@ def evaluate_policy(*, policy='student', checkpoint=None, scenario='all', episod
                         record = records[i]
                         record['steps'] += 1
                         record['velocity_error_sum'] += float(sample['velocity_error'][i])
-                        record['substep_difference_sum'] += float(difference[i])
-                        record['substep_difference_max'] = max(record['substep_difference_max'], float(maximum[i]))
                         stage = STAGES[int(sample['stage'][i])]
                         gravity, height = sample['gravity'][i], float(sample['height'][i])
                         contacts = sample['contacts'][i]
-                        biped = (stage.startswith('biped') and float(gravity[0]) < -.85
-                                 and abs(float(gravity[1])) < .25 and .4 < height < .65
-                                 and bool(contacts[2:].all()))
-                        tripod = (stage == 'tripod_operation' and float(sample['foot_error'][i]) < .12
-                                  and bool(contacts[[0, 2, 3]].all()) and not bool(contacts[1]))
-                        quadruped = (stage == 'return' and float(gravity[2]) < -.85
-                                     and .18 < height < .45 and bool(contacts.all()))
-                        for prefix, good in (('biped', biped), ('tripod', tripod), ('final_quad', quadruped)):
-                            record[prefix + '_run'] = record[prefix + '_run'] + env.step_dt if good else 0.
-                            record[prefix + '_hold'] = max(record[prefix + '_hold'], record[prefix + '_run'])
+                        update_physical_holds(record, stage=stage, gravity=gravity, height=height,
+                            contacts=contacts, foot_error=float(sample['foot_error'][i]), dt=env.step_dt)
                         if 'operation' in stage:
                             record['foot_error_sum'] += float(sample['foot_error'][i])
                             record['foot_samples'] += 1
@@ -201,23 +199,26 @@ def evaluate_policy(*, policy='student', checkpoint=None, scenario='all', episod
                     if not any(active):
                         break
                 batch += 1
-        for stat in timing_by_owner.values():
-            stat['mean_abs_rad'] = stat.pop('sum_abs_rad') / max(stat['frames'], 1)
         summary = {}
         for name in scenarios:
             rows = [row for row in results if row['scenario'] == name]
             summary[name] = dict(episodes=len(rows), successes=sum(row['success'] for row in rows),
                                  physical_failures=sum(row['physical_failure'] for row in rows),
                                  script_completions=sum(row['script_completed'] for row in rows))
-        return dict(policy=policy, checkpoint=str(Path(checkpoint).resolve()) if checkpoint else None,
+        return dict(schema_version=2, policy=policy,
+                    execution='native_action_zero_order_hold_direct_pd',
+                    checkpoint=str(Path(checkpoint).resolve()) if checkpoint else None,
                     completed_updates=metadata['completed_updates'] if metadata else None,
                     split=split, seed=seed, device=str(device), num_envs=env.num_envs,
                     max_steps=max_steps, wall_seconds=time.perf_counter() - started,
-                    criteria=dict(continuous_hold_s=.5, biped_gravity_x_max=-.85,
+                    criteria=dict(continuous_hold_s=CONTINUOUS_HOLD_S,
+                                  biped_contact_grace_s=BIPED_CONTACT_GRACE_S,
+                                  required_holds={name: required_holds(name) for name in scenarios},
+                                  biped_gravity_x_max=-.85,
                                   biped_height_m=[.4, .65], tripod_foot_error_max_m=.12,
                                   final_quad_gravity_z_max=-.85, final_quad_height_m=[.18, .45],
                                   contact_force_min_n=5.,
                                   capture_phase='termination_manager_pre_auto_reset'),
-                    summary=summary, timing_by_owner=timing_by_owner, episodes=results)
+                    summary=summary, episodes=results)
     finally:
         env.close()

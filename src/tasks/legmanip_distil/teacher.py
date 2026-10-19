@@ -1,5 +1,4 @@
 """Frozen original actor policies, queried on the student's live physical state."""
-from copy import copy
 from dataclasses import asdict
 import hashlib
 from pathlib import Path
@@ -10,10 +9,7 @@ from tensordict import TensorDict
 from mjlab.envs import mdp
 
 from src.tasks.transition_t.keyboard import AlignedKeyboardTeacher
-from src.tasks.pedipulation.mdp.target_limiter import JointTargetLimiter
-from src.tasks.transition_t.env_cfg import TRANSITION_TARGET_VELOCITY_LIMITS, TRANSITION_TARGET_ACCELERATION_LIMITS
 from src.tasks.tracking.mdp.observations import motion_anchor_pos_b, motion_anchor_ori_b
-from src.tasks.loco_pedipulation.mdp.commands import QUAD, HOLD
 from .commands import QUADRUPED, RISE, BIPED, DOWN
 from .intent import ROOT
 
@@ -85,9 +81,6 @@ class FSMTeacher(torch.nn.Module):
                     env.cfg.commands['intent'].entry_bank_file, env.device)
         self.requires_grad_(False)
         self.eval()
-        self.limiter = JointTargetLimiter(self.action.executed_position,
-            TRANSITION_TARGET_VELOCITY_LIMITS, TRANSITION_TARGET_ACCELERATION_LIMITS, env.physics_dt)
-        self._preview_engaged = self.term.fr_engaged.clone()
         self.loaded = True
         self._metadata = {'checkpoints': {name: {'path': str(path),
             'sha256': hashlib.sha256(path.read_bytes()).hexdigest()} for name, path in self.paths.items()},
@@ -95,7 +88,9 @@ class FSMTeacher(torch.nn.Module):
                 'sha256': reference.reference.sha256} for kind, reference in self.term.references.items()},
             'entry_split': env.cfg.commands['intent'].entry_split,
             'entry_bank_sha256': hashlib.sha256(Path(env.cfg.commands['intent'].entry_bank_file).read_bytes()).hexdigest(),
-            'label': 'final_substep_applied_common_action',
+            'label': 'teacher_native_common_action',
+            'execution': 'zero_order_hold_direct_pd',
+            'target_limiter': None, 'delay': False,
             'thresholds': [self.term.cfg.rise_trigger_height, self.term.cfg.down_trigger_height,
                            self.term.cfg.trigger_seconds]}
 
@@ -116,52 +111,10 @@ class FSMTeacher(torch.nn.Module):
         return result
 
     @torch.inference_mode()
-    def preview(self, requests):
-        if requests.shape != self.action.raw_action.shape or not torch.isfinite(requests).all():
-            raise ValueError('Teacher requests must be finite [num_envs, 12] values')
-        action, term = self.action, self.term
-        endpoint = (term.owner == QUADRUPED) | (term.owner == BIPED)
-        current = requests.clamp(-10., 10.)
-        current[endpoint] = requests[endpoint].clamp(-100., 100.)
-        limiter = copy(self.limiter)
-        limiter.position = action.executed_position.clone()
-        limiter.velocity = action.executed_velocity.clone()
-        engaged = term.fr_engaged.clone()
-        engaged[(term.owner == QUADRUPED) & (term.phase == QUAD)] = False
-        engaged |= (term.owner != QUADRUPED) | ((term.phase == HOLD) & (term.blend >= 1.))
-        bypass = (term.owner == QUADRUPED) & ~engaged
-        device = torch.device(self.env.device)
-        devices = [device.index or 0] if device.type == 'cuda' else []
-        with torch.random.fork_rng(devices=devices):
-            delay = torch.empty_like(action.delay_steps).random_(0, self.env.cfg.decimation)
-        targets = []
-        for substep in range(self.env.cfg.decimation):
-            delayed = (term.owner != RISE)[:, None] & (substep < delay)
-            selected = torch.where(delayed, action.last_request, current)
-            target = action.default_angles + action.cfg.scale * selected + action.motor_offsets
-            previous = limiter.position[bypass].clone()
-            limiter.step(target, validate=False)
-            limiter.position[bypass] = target[bypass]
-            limiter.velocity[bypass] = ((target[bypass] - previous) / limiter.dt).clamp(
-                -limiter.velocity_limits, limiter.velocity_limits)
-            targets.append(limiter.position.clone())
-        targets = torch.stack(targets)
-        return (targets[-1] - action.default_angles - action.motor_offsets) / action.cfg.scale, targets, current, engaged
-
-    @torch.inference_mode()
     def forward(self, obs=None):
-        labels, targets, requests, engaged = self.preview(self.requests())
-        self.action.teacher_targets.copy_(targets)
-        self.action.teacher_requests.copy_(requests)
-        self.action.teacher_plan_ready = True
-        self._preview_engaged.copy_(engaged)
-        return labels
-
-    def set_control_mask(self, mask):
-        if mask.shape != (self.env.num_envs,) or mask.dtype != torch.bool:
-            raise ValueError('Teacher control mask must be boolean [num_envs]')
-        self.action.teacher_mask.copy_(mask)
-        self.term.fr_engaged.copy_(self._preview_engaged)
+        # Endpoint adapters change only the default-angle coordinate system.
+        # Neither labels nor live control pass through a target governor.
+        return self.requests()
 
     def reset(self, dones=None, hidden_state=None):
         pass  # Physical and reference resets are owned by the environment.

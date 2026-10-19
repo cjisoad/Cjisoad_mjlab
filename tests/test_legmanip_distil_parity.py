@@ -1,4 +1,4 @@
-"""Compare distillation adapters with the actual frozen teacher source.
+"""Compare native actor routing and motion adapters with the frozen teacher source.
 
 The keyboard action/motion classes are local to ``load_full_chain``. Compile
 their unchanged method ASTs into test classes so the comparisons exercise
@@ -15,17 +15,12 @@ import torch
 
 from src.tasks.legmanip_distil.commands import DOWN_MOTION, RISE_MOTION, ReferenceState
 from src.tasks.legmanip_distil.teacher import FSMTeacher, motion_observations
-from src.tasks.pedipulation.mdp.target_limiter import JointTargetLimiter
 from src.tasks.transition_down_v2.commands import LandingCommand
 from src.tasks.transition_down_v2.env_cfg import landing_env_cfg
 from src.tasks.transition_t.commands import (
     JOINT_NAMES, TRACKED_BODY_NAMES, TransitionCommand, TransitionCommandCfg,
 )
-from src.tasks.transition_t.env_cfg import (
-    TRANSITION_TARGET_ACCELERATION_LIMITS, TRANSITION_TARGET_VELOCITY_LIMITS,
-    transition_env_cfg,
-)
-from src.tasks.transition_t.keyboard import KeyboardTransitionAction
+from src.tasks.transition_t.env_cfg import transition_env_cfg
 from mjlab.utils.lab_api.math import quat_from_euler_xyz
 
 
@@ -53,92 +48,23 @@ def _original_class(class_name, base, methods):
     return namespace[class_name]
 
 
-@pytest.fixture(scope='module')
-def original_action_type():
-    return _original_class('FullChainAction', KeyboardTransitionAction,
-        ('_limiter_bypass_mask', 'preview_teacher_actions', '_write_target'))
+def test_fsm_routes_native_requests_without_clipping_or_substep_processing(monkeypatch):
+    from types import MethodType
+    from src.tasks.legmanip_distil import teacher as teacher_module
 
-
-@pytest.mark.parametrize('pending_reset', [False, True])
-def test_preview_and_all_substeps_match_original_teacher(original_action_type, pending_reset):
-    generator = torch.Generator().manual_seed(17)
-    count = 8
-    random = lambda *shape: torch.randn(*shape, generator=generator)
-    term = SimpleNamespace(
-        owner=torch.tensor([0, 0, 0, 0, 0, 2, 3, 4]),
-        phase=torch.tensor([0, 1, 2, 3, 4, 3, 3, 3]),
-        blend=torch.tensor([0., .3, .8, 1., .4, 1., 1., 1.]),
-        fr_engaged=torch.tensor([True, False, False, False, True, False, False, False]),
-    )
-    env = SimpleNamespace(num_envs=count, device='cpu', physics_dt=.005,
-        cfg=SimpleNamespace(decimation=4),
-        command_manager=SimpleNamespace(get_term=lambda name: term),
-        action_manager=SimpleNamespace(action=torch.zeros(count, 12)))
-    default, previous, offsets = random(count, 12), random(count, 12), .01 * random(count, 12)
-    position = default + .25 * previous + offsets
-    joint_pos = position + .04 * random(count, 12)
-    limiter = JointTargetLimiter(position, TRANSITION_TARGET_VELOCITY_LIMITS,
-        TRANSITION_TARGET_ACCELERATION_LIMITS, env.physics_dt)
-    limiter.velocity[:, 3:6] = random(count, 3).clamp(-1.5, 1.5)
-    requested = 3. * random(count, 12)
-    requested[:, 0] = 25.  # Endpoint translation must bypass the transition clip.
-    requested[6, 1] = 125.  # The endpoint's own common-action clip still applies.
-    target = torch.zeros_like(position)
-
-    def write_target(value, joint_ids):
-        target.copy_(value)
-
-    source = object.__new__(original_action_type)
-    source._env = env
-    source._entity = SimpleNamespace(data=SimpleNamespace(
-        joint_pos=joint_pos, joint_vel=random(count, 12)),
-        set_joint_position_target=write_target)
-    source.joint_ids = torch.arange(12)
-    source.cfg = SimpleNamespace(scale=.25)
-    source.default_angles = default
-    source.motor_offsets = offsets
-    source._raw_action = previous.clone()
-    source.previous_action = torch.zeros_like(previous)
-    source.previous_joint_vel = torch.zeros_like(previous)
-    source._requested_action = previous.clone()
-    source._previous_requested_action = torch.zeros_like(previous)
-    source.target_limiter = limiter
-    source._limiter_pending = torch.zeros(count, dtype=torch.bool)
-    source._limiter_pending[[1, 5]] = pending_reset
-    source._fr_limiter_engaged = term.fr_engaged.clone()
-    source.delay_steps = torch.zeros(count, 1, dtype=torch.long)
-    source.teacher_delay = torch.zeros(count, dtype=torch.bool)
-    source.use_teacher_policy = True
-    source.source_teacher = source.biped_teacher = SimpleNamespace(
-        actions=lambda env, ids: requested[ids])
-    executed_position, executed_velocity = limiter.position.clone(), limiter.velocity.clone()
-    executed_position[source._limiter_pending] = joint_pos[source._limiter_pending]
-    executed_velocity[source._limiter_pending] = 0.
-    action = SimpleNamespace(raw_action=previous.clone(), default_angles=default,
-        motor_offsets=offsets, last_request=previous.clone(), cfg=source.cfg,
-        executed_position=executed_position, executed_velocity=executed_velocity,
-        delay_steps=torch.zeros_like(source.delay_steps))
-    teacher = SimpleNamespace(env=env, term=term, action=action, limiter=limiter)
-    original_history = tuple(value.clone() for value in
-        (limiter.position, limiter.velocity, source._requested_action, term.fr_engaged))
-
-    # Both previews must leave RNG and live actuator history untouched. The
-    # real original action then consumes the same draw and executes every target.
-    with torch.random.fork_rng():
-        torch.manual_seed(29)
-        rng = torch.get_rng_state().clone()
-        expected = source.preview_teacher_actions(requested)
-        actual, substeps, _, _ = FSMTeacher.preview(teacher, requested)
-        torch.testing.assert_close(torch.get_rng_state(), rng)
-        for value, before in zip((limiter.position, limiter.velocity,
-                                  source._requested_action, term.fr_engaged), original_history):
-            torch.testing.assert_close(value, before, atol=0., rtol=0.)
-        torch.testing.assert_close(actual, expected, atol=2.e-5, rtol=0.)
-        source.process_actions(requested)
-        for index in range(env.cfg.decimation):
-            source.apply_actions()
-            torch.testing.assert_close(substeps[index], target, atol=1.e-6, rtol=0.)
-        torch.testing.assert_close(actual, source.raw_action, atol=2.e-5, rtol=0.)
+    owners = torch.tensor([0, 2, 3, 4, 0, 2, 3, 4])
+    native = torch.arange(96, dtype=torch.float32).reshape(8, 12) - 40.
+    # Values above the former transition clip must remain supervision targets.
+    env = SimpleNamespace(num_envs=8)
+    endpoint = SimpleNamespace(actions=lambda env, ids: native[ids])
+    teacher = SimpleNamespace(env=env, action=SimpleNamespace(raw_action=torch.zeros_like(native)),
+        term=SimpleNamespace(owner=owners, references={2: object(), 4: object()}),
+        quad=endpoint, biped=endpoint,
+        actors={'rise': lambda obs: obs['actor'], 'down': lambda obs: obs['actor']})
+    teacher.requests = MethodType(FSMTeacher.requests, teacher)
+    monkeypatch.setattr(teacher_module, 'motion_observations', lambda env, reference: native)
+    actual = FSMTeacher.forward(teacher)
+    torch.testing.assert_close(actual, native, atol=0., rtol=0.)
 
 
 class _Scene(dict):

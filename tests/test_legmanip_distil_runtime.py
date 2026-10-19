@@ -66,6 +66,16 @@ def test_nonfinite_actions_rejected_before_pd_write(student_world):
     torch.testing.assert_close(action.raw_action, before)
 
 
+def test_previous_action_observations_describe_the_clipped_pd_target(student_world):
+    env = student_world
+    env.reset()
+    action = env.action_manager.get_term('joint_pos')
+    env.action_manager.process_action(torch.full((env.num_envs, 12), 101.))
+    action.apply_actions()
+    torch.testing.assert_close(env.action_manager.action, action.raw_action, atol=0., rtol=0.)
+    assert action.raw_action.eq(100.).all()
+
+
 def test_physical_failure_checks_full_robot_state(student_world):
     from src.tasks.legmanip_distil.env_cfg import physical_failure
     env = student_world
@@ -115,7 +125,7 @@ def test_rise_down_references_and_partial_resets_are_independent(teacher_world):
     torch.testing.assert_close(env.sim.data.qpos[0], before[2])
 
 
-def test_teacher_query_is_read_only_and_labels_equal_final_targets(teacher_world):
+def test_teacher_query_is_read_only_and_native_targets_are_held(teacher_world):
     env, teacher = teacher_world
     env.reset()
     action = env.action_manager.get_term('joint_pos')
@@ -124,19 +134,20 @@ def test_teacher_query_is_read_only_and_labels_equal_final_targets(teacher_world
     term.phase[:] = 3
     term.blend[:] = 1.
     before = [value.clone() for value in (env.sim.data.qpos, env.sim.data.qvel,
-              action.raw_action, action.executed_position, action.executed_velocity)]
+              action.raw_action, action.previous_action)]
     rng = torch.get_rng_state().clone()
     labels = teacher(None)
     assert labels.shape == (4, 12) and torch.isfinite(labels).all()
     torch.testing.assert_close(torch.get_rng_state(), rng)
     for value, expected in zip((env.sim.data.qpos, env.sim.data.qvel, action.raw_action,
-                               action.executed_position, action.executed_velocity), before):
+                               action.previous_action), before):
         torch.testing.assert_close(value.clone(), expected)
-    teacher.set_control_mask(torch.ones(4, dtype=torch.bool))
     action.process_actions(labels)
     for _ in range(env.cfg.decimation):
         action.apply_actions()
-    torch.testing.assert_close(action.raw_action, labels, atol=1e-6, rtol=0)
+        torch.testing.assert_close(env.scene['robot'].data.joint_pos_target[:, action.joint_ids],
+                                   action.default_angles + .25 * labels.clamp(-100., 100.))
+    torch.testing.assert_close(action.raw_action, labels.clamp(-100., 100.), atol=0., rtol=0.)
     assert all(not parameter.requires_grad for parameter in teacher.parameters())
 
 
@@ -152,6 +163,56 @@ def test_teacher_internal_reference_does_not_change_user_intent(teacher_world):
     term._update_command()
     torch.testing.assert_close(intent.command[0], command[0])
     assert not torch.equal(term.command[0], command[0])
+
+
+def test_all_four_teacher_labels_are_native_requests_without_filtering(teacher_world):
+    env, teacher = teacher_world
+    env.reset()
+    term = env.command_manager.get_term('twist')
+    term.owner[:] = torch.tensor([0, 2, 3, 4])
+    term.phase[:] = 3
+    term.blend[:] = 1.
+    native = teacher.requests().clone()
+    labels = teacher(None)
+    torch.testing.assert_close(labels, native, atol=0., rtol=0.)
+
+
+def test_teacher_and_student_share_direct_targets_from_first_substep(teacher_world):
+    env, teacher = teacher_world
+    env.reset()
+    action = env.action_manager.get_term('joint_pos')
+    assert action.target_limiter is None and not action.cfg.delay
+    assert not hasattr(teacher, 'limiter')
+    assert not hasattr(action, 'teacher_targets')
+    request = torch.full_like(action.raw_action, .8)
+    expected = action.default_angles + action.cfg.scale * request + action.motor_offsets
+    action.process_actions(request)
+    for _ in range(env.cfg.decimation):
+        action.apply_actions()
+        torch.testing.assert_close(env.scene['robot'].data.joint_pos_target[:, action.joint_ids], expected)
+        torch.testing.assert_close(action.raw_action, request)
+
+
+def test_native_label_contract_is_distinct_from_old_filtered_checkpoints(teacher_world):
+    from src.tasks.legmanip_distil.observations import action_contract
+    env, teacher = teacher_world
+    contract = action_contract(env)
+    assert contract['label'] == 'teacher_native_common_action'
+    assert contract['target_limiter'] is None
+    assert contract['delay'] is False
+    assert teacher.metadata()['label'] == contract['label']
+
+
+def test_old_filtered_label_artifacts_cannot_silently_use_new_contract(teacher_world):
+    from src.tasks.legmanip_distil.observations import action_contract, observation_contract
+    from src.tasks.legmanip_distil.deployment import validate_contract
+    env, _ = teacher_world
+    old = action_contract(env)
+    old['label'] = 'teacher_final_physics_substep_applied_common_action'
+    old.pop('target_limiter')
+    old.pop('delay')
+    with pytest.raises(ValueError, match='action_contract'):
+        validate_contract(dict(observation_contract=observation_contract(), action_contract=old), env)
 
 
 def test_zero_command_starts_biped_return_without_hold_delay(teacher_world):

@@ -123,7 +123,6 @@ class IntentCommand(CommandTerm):
         self.robot.write_joint_state_to_sim(joints, torch.zeros_like(joints), env_ids=ids)
         self.robot.clear_state(env_ids=ids)
         self.reset_root[ids] = root
-        action.executed_position[ids] = joints[:, action.joint_ids]
         biped = ids[self.starts_biped[ids]]
         if len(biped):
             bank = self._load_bank()
@@ -138,9 +137,6 @@ class IntentCommand(CommandTerm):
             self.reset_root[biped] = root
             action._raw_action[biped] = bank.data['raw_action'][selected]
             action.previous_action[biped] = bank.data['previous_action'][selected]
-            action.last_request[biped] = bank.data['raw_action'][selected]
-            action.executed_position[biped] = bank.data['limiter_position'][selected]
-            action.executed_velocity[biped] = bank.data['limiter_velocity'][selected]
             self._env.action_manager.action[biped] = action.raw_action[biped]
             self._command[biped, 3:] = self.nominal
         if self.cfg.automatic:

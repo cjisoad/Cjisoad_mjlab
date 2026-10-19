@@ -27,8 +27,8 @@ class LegManipDistillation(Distillation):
   """Distillation with episode-level DAgger and isolated GRU replay memory.
 
   ``storage.actions`` records the selected policy input before the environment's
-  final action clamp. Supervision uses ``privileged_actions`` (applied teacher
-  labels); the next observation contains the actually applied common action.
+  final action clamp. Supervision uses ``privileged_actions`` (native teacher
+  requests); the next observation contains the actually applied common action.
   Terminal auto-resets make post-step action buffers unsuitable for recovery.
   """
 
@@ -113,19 +113,17 @@ class LegManipDistillation(Distillation):
         obs["student"].new_zeros(1, self.storage.num_envs, 256)
         if hidden is None else hidden.detach().clone()
       )
-    # Draw control choices before the teacher previews the environment's delay
-    # RNG. No random draw may intervene between that preview and env.step.
+    # Sample one controlling policy per episode; both use the same direct PD.
     pending_ids = self._pending_control_sample.nonzero(as_tuple=False).flatten()
     if pending_ids.numel():
       self.teacher_control_mask[pending_ids] = torch.rand(pending_ids.numel(), device=self.device) < self.beta
       self._pending_control_sample[pending_ids] = False
-    # The student advances on teacher-controlled frames as well. The teacher
-    # evaluates once and caches the original substep PD targets in the action.
+    # Advance the student on teacher-controlled frames too, and supervise the
+    # native teacher request on whichever physical states are actually visited.
     prediction = self.student(obs)
     labels = self.teacher(obs).detach().clone()
     if prediction.shape != labels.shape or labels.shape != (self.storage.num_envs, 12):
       raise ValueError("Student and FSM teacher must both produce [num_envs, 12] actions.")
-    self.teacher.set_control_mask(self.teacher_control_mask)
     actions = torch.where(self.teacher_control_mask[:, None], labels, prediction)
     # Snapshot before env.step: manager buffers may be overwritten in-place.
     self.transition.observations = obs.select("student").clone()
@@ -184,7 +182,6 @@ class LegManipDistillation(Distillation):
     self.teacher.reset()
     self.teacher_control_mask.zero_()
     self._pending_control_sample.fill_(True)
-    self.teacher.set_control_mask(self.teacher_control_mask)
     self.rollout_initial_hidden = None
     self.transition.clear()
     self.storage.clear()
