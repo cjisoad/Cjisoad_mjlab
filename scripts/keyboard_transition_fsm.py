@@ -1,5 +1,6 @@
 """Keyboard and bounded scripted playback of the actual actor75 teacher chain."""
 from dataclasses import asdict, dataclass, fields
+from copy import copy
 import argparse
 import json
 import math
@@ -680,16 +681,61 @@ def load_full_chain(args, *, render_mode=None, configure_env=None):
       super().reset(env_ids)
       self._fr_limiter_engaged[slice(None) if env_ids is None else env_ids] = False
 
-    def _write_target(self, selected_action):
+    def _limiter_bypass_mask(self, engaged):
       term = self._env.command_manager.get_term('twist')
       quad_teacher = term.owner == QUADRUPED
       # Let the original teacher complete the first quad-to-tripod lift.
       # HOLD with full support blend marks completion of that reach. Latch
       # the governor through later retargets and return until QUAD is restored.
-      self._fr_limiter_engaged[quad_teacher & (term.phase == QUAD)] = False
-      self._fr_limiter_engaged |= (~quad_teacher
+      engaged[quad_teacher & (term.phase == QUAD)] = False
+      engaged |= (~quad_teacher
         | ((term.phase == HOLD) & (term.blend >= 1.)))
-      source = quad_teacher & ~self._fr_limiter_engaged
+      return quad_teacher & ~engaged
+
+    @torch.inference_mode()
+    def preview_teacher_actions(self, requests):
+      """Final-substep teacher targets, without changing live state or RNG.
+
+      Endpoint requests are injected after wrapper clipping in playback. The
+      preview uses that same rule and the upcoming delay draw; the subsequent
+      real step consumes the draw normally. Its limiter and stage latch are
+      private copies of the student's current actuator history.
+      """
+      if requests.shape != self.raw_action.shape or not torch.isfinite(requests).all():
+        raise ValueError('Teacher requests must be finite [num_envs, 12] actions')
+      term = self._env.command_manager.get_term('twist')
+      endpoint = (term.owner == QUADRUPED) | (term.owner == BIPED)
+      current = requests.clamp(-10., 10.).clone()
+      current[endpoint] = requests[endpoint].clamp(-100., 100.)
+      if self.target_limiter is None:
+        return current
+      limiter = copy(self.target_limiter)
+      limiter.position = limiter.position.clone()
+      limiter.velocity = limiter.velocity.clone()
+      if self._limiter_pending.any():
+        ids = self._limiter_pending.nonzero().flatten()
+        limiter.reset(self.joint_pos[ids], env_ids=ids)
+      source = self._limiter_bypass_mask(self._fr_limiter_engaged.clone())
+      device = self.delay_steps.device
+      devices = [device.index] if device.type == 'cuda' else []
+      with torch.random.fork_rng(devices=devices):
+        delay = torch.empty_like(self.delay_steps).random_(0, self._env.cfg.decimation)
+      delayed = (term.owner != RISE)[:, None]
+      for substep in range(self._env.cfg.decimation):
+        selected = torch.where(delayed & (substep < delay), self._requested_action, current)
+        target = self.default_angles + self.cfg.scale*selected + self.motor_offsets
+        previous = limiter.position[source].clone()
+        limiter.step(target, validate=False)
+        # Mirror the initial quad bypass while retaining governor re-entry history.
+        limiter.position[source] = target[source]
+        limiter.velocity[source] = ((target[source]-previous)/limiter.dt).clamp(
+          -limiter.velocity_limits, limiter.velocity_limits)
+      applied = (limiter.position-self.default_angles-self.motor_offsets)/self.cfg.scale
+      applied[source] = current[source]
+      return applied
+
+    def _write_target(self, selected_action):
+      source = self._limiter_bypass_mask(self._fr_limiter_engaged)
       limiter = self.target_limiter
       if limiter is None or not source.any():
         return super()._write_target(selected_action)

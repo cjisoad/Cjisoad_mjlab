@@ -64,7 +64,7 @@ class EntryTrials:
     self._metrics = {}
     self.post_samples = torch.zeros_like(self.elapsed)
     self.tracking_samples = torch.zeros_like(self.elapsed)
-    self.failed_gates = {name: torch.zeros_like(self.elapsed) for name in ('orientation','height','position')}
+    self.failed_gates = {name: torch.zeros_like(self.elapsed) for name in ('orientation','height','position','horizontal_speed')}
     self.post_sums, self.post_maxima, self.tracking_sums = {}, {}, {}
 
   def record(self, completed, metrics, terminated, truncated, *, termination_reasons=None):
@@ -201,7 +201,8 @@ def evaluate_entries(actor, bank_file, *, level: int, device: str, attempts: int
   """Evaluate a copy of a trained RSL-RL actor, ending at the standing handoff.
 
   Success means full reference completion and one continuous second upright
-  near the fixed aligned reference endpoint. Stepping is allowed. No standing
+  within 20 cm of the fixed aligned endpoint at <=0.15 m/s horizontal speed
+  (unless position_radius overrides the position tolerance). Stepping is allowed. No standing
   teacher is executed here. Alternate radii require independent full rollouts.
   """
   if curriculum not in ('legacy', 'three-stage') or initialization not in ('entries', 'nominal'):

@@ -23,8 +23,8 @@ def parse_args(argv=None):
   parser.add_argument('--attempts', type=int, default=64)
   parser.add_argument('--device', default='cuda:0')
   parser.add_argument('--seed', type=int, default=424242)
-  parser.add_argument('--position-radius', type=float, default=.08,
-    help='Allowed endpoint XY error in meters; success needs 1 continuous second (default 0.08)')
+  parser.add_argument('--position-radius', type=float, default=.20,
+    help='Allowed endpoint XY error in meters; success also needs horizontal speed <=0.15 m/s for 1 s (default 0.20)')
   parser.add_argument('--allow-legacy-transition-limiter', action='store_true',
     help='Evaluate an old unlimited transition policy under new execution limits')
   parser.add_argument('--output', type=Path, default=ROOT/'outputs/transition_entries/evaluation.json')
