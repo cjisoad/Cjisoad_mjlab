@@ -1,4 +1,4 @@
-"""Evaluate native teacher or student actions with the same direct PD hold."""
+"""Evaluate student behavior or the teacher's substep/final-target timing gap."""
 import argparse
 import json
 import os
@@ -8,7 +8,7 @@ from pathlib import Path
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--checkpoint-file')
-    parser.add_argument('--policy', choices=('student', 'teacher'), default='student')
+    parser.add_argument('--policy', choices=('student', 'teacher', 'teacher-hold', 'compare-teacher-timing'), default='student')
     parser.add_argument('--scenario', choices=('all', 'quad', 'biped', 'cycle'), default='all')
     parser.add_argument('--episodes', type=int, default=16, help='Episodes per scenario')
     parser.add_argument('--num-envs', type=int, default=16)
@@ -28,11 +28,15 @@ def main(argv=None):
     kwargs = dict(checkpoint=args.checkpoint_file, scenario=args.scenario, episodes=args.episodes,
                   num_envs=args.num_envs, max_steps=args.max_steps, device=device,
                   split=args.split, seed=args.seed)
-    result = evaluate_policy(policy=args.policy, **kwargs)
+    if args.policy == 'compare-teacher-timing':
+        result = {policy: evaluate_policy(policy=policy, **kwargs) for policy in ('teacher', 'teacher-hold')}
+    else:
+        result = evaluate_policy(policy=args.policy, **kwargs)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, allow_nan=False) + '\n')
     print('Evaluation written to', args.output)
-    print(json.dumps(result['summary'], indent=2))
+    print(json.dumps({key: value['summary'] for key, value in result.items()}
+                     if args.policy == 'compare-teacher-timing' else result['summary'], indent=2))
 
 
 if __name__ == '__main__':

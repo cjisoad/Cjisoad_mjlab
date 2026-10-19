@@ -30,10 +30,8 @@ def action_contract(env):
         'default_angles': action.default_angles[0].detach().cpu().tolist(),
         'action_scale': action.cfg.scale,
         'control_dt': env.step_dt,
-        'label': 'teacher_native_common_action',
+        'label': 'teacher_final_physics_substep_applied_common_action',
         'execution': 'zero_order_hold_direct_pd',
-        'target_limiter': None,
-        'delay': False,
         'action_clip': 100.,
     }
 

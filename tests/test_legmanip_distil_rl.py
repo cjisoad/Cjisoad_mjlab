@@ -108,12 +108,16 @@ class TensorTeacher(torch.nn.Module):
   def __init__(self, env=None, **kwargs):
     super().__init__()
     self.weight = torch.nn.Parameter(torch.tensor(1.0))
+    self.control_mask = None
     self.value = 1.0
     self.calls = 0
 
   def forward(self, obs):
     self.calls += 1
     return torch.ones_like(obs["student"][:, :12]) * self.weight * self.value
+
+  def set_control_mask(self, mask):
+    self.control_mask = mask.clone()
 
   def reset(self, dones=None):
     pass
@@ -189,11 +193,11 @@ def test_control_choice_persists_until_episode_reset_and_student_always_advances
     algorithm.process_env_step(obs, torch.zeros(4), torch.zeros(4, dtype=torch.bool), {})
     algorithm.teacher_probability = 0.0
     algorithm.act(obs)
-    assert algorithm.teacher_control_mask.tolist() == [True, True, True, True]
+    assert algorithm.teacher.control_mask.tolist() == [True, True, True, True]
     assert not torch.equal(hidden1, algorithm.student.get_hidden_state())
     algorithm.process_env_step(obs, torch.zeros(4), torch.tensor([False, True, False, True]), {})
     actual = algorithm.act(obs)
-    assert algorithm.teacher_control_mask.tolist() == [True, False, True, False]
+    assert algorithm.teacher.control_mask.tolist() == [True, False, True, False]
     teacher = algorithm.transition.privileged_actions.clone()
     assert not torch.equal(actual[1::2], teacher[1::2])
     torch.testing.assert_close(actual[::2], teacher[::2])
@@ -203,14 +207,14 @@ def test_control_choice_persists_until_episode_reset_and_student_always_advances
   assert algorithm.teacher.calls == 3
 
 
-def test_control_sampling_does_not_draw_again_after_teacher_query(monkeypatch):
+def test_control_sampling_consumes_rng_before_teacher_previews_action_delay(monkeypatch):
   algorithm = make_algorithm(teacher_probability=0.5)
   real_forward = algorithm.teacher.forward
   preview_rng = []
 
   def preview(obs):
     labels = real_forward(obs)
-    # Native teacher queries are deterministic and do not consume delay RNG.
+    # The real FSM previews the next delay draw, then restores this RNG state.
     preview_rng.append(torch.get_rng_state().clone())
     return labels
 

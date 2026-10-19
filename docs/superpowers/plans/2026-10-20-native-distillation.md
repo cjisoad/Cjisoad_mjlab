@@ -1,4 +1,9 @@
-# Native teacher action distillation
+# Native teacher action distillation (execution change reverted)
+
+> The user rejected the native-output experiment after local observation.
+> Native supervision and direct teacher execution were reverted to the previous
+> filtered-final-substep scheme. The two scorer fixes remain. The plan and
+> results below describe the superseded experiment, not current behavior.
 
 **Goal:** Distill the four frozen actors' native joint-position requests, without a target governor on either control path, and correct scenario/contact evaluation.
 

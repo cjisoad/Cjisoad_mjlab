@@ -95,6 +95,8 @@ def episode_result(record, dt):
         'mean_twist_abs_error': record['velocity_error_sum'] / max(record['steps'], 1),
         'mean_operation_foot_error_m': (record['foot_error_sum'] / record['foot_samples']
                                        if record['foot_samples'] else None),
+        'mean_substep_to_final_target_difference_rad': record['substep_difference_sum'] / max(record['steps'], 1),
+        'max_substep_to_final_target_difference_rad': record['substep_difference_max'],
     }
 
 
@@ -103,6 +105,7 @@ def new_record(scenario, trajectory):
                 deadline=False, biped_hold=0., tripod_hold=0., final_quad_hold=0.,
                 biped_run=0., tripod_run=0., final_quad_run=0.,
                 velocity_error_sum=0., foot_error_sum=0., foot_samples=0,
+                substep_difference_sum=0., substep_difference_max=0.,
                 hind_contact_age=[float('inf'), float('inf')],
                 entry_trajectory=trajectory)
 
@@ -112,8 +115,9 @@ def evaluate_policy(*, policy='student', checkpoint=None, scenario='all', episod
                     num_envs=16, max_steps=3000, device='cpu', split='validation', seed=123):
     """Use a disjoint entry split and the same scripted intent for each policy.
 
-    The teacher returns native common-coordinate actor requests. Both policies
-    use the same direct position-target hold without a governor or delay.
+    teacher-hold recomputes the frozen teacher on its own visited states and
+    applies only the final target, directly through student PD. Compare it with
+    teacher to quantify the substep execution mismatch in closed loop.
     """
     from mjlab.envs import ManagerBasedRlEnv
     from mjlab.managers import TerminationTermCfg
@@ -122,7 +126,7 @@ def evaluate_policy(*, policy='student', checkpoint=None, scenario='all', episod
     from .deployment import validate_contract
     from .rl import load_student
 
-    if policy not in ('student', 'teacher'):
+    if policy not in ('student', 'teacher', 'teacher-hold'):
         raise ValueError('Unknown evaluation policy')
     if min(episodes, num_envs, max_steps) < 1 or split not in ('validation', 'final'):
         raise ValueError('Use positive evaluation counts and validation/final entry split')
@@ -148,7 +152,10 @@ def evaluate_policy(*, policy='student', checkpoint=None, scenario='all', episod
             from .teacher import FSMTeacher
             actor = FSMTeacher(env)
         intent = env.command_manager.get_term('intent')
+        action = env.action_manager.get_term('joint_pos')
         results = []
+        timing_by_owner = {str(owner): {'frames': 0, 'sum_abs_rad': 0., 'max_abs_rad': 0.}
+                           for owner in (0, 2, 3, 4)}
         started = time.perf_counter()
 
         def trajectory(index):
@@ -159,7 +166,8 @@ def evaluate_policy(*, policy='student', checkpoint=None, scenario='all', episod
             intent.cfg.scenario = name
             obs, _ = env.reset(seed=seed)
             actor.reset()
-            # Fixed seeded batches keep initial states/commands comparable.
+            # Fixed batches keep teacher and teacher-hold initial states and
+            # commands paired even when one execution mode falls earlier.
             completed = 0
             batch = 0
             while completed < episodes:
@@ -171,6 +179,21 @@ def evaluate_policy(*, policy='student', checkpoint=None, scenario='all', episod
                 records = [new_record(name, trajectory(i)) for i in range(env.num_envs)]
                 for step in range(max_steps):
                     actions = actor(TensorDict(obs, batch_size=[env.num_envs]))
+                    difference = torch.zeros(env.num_envs, device=device)
+                    maximum = difference.clone()
+                    if policy != 'student':
+                        actor.set_control_mask(torch.full((env.num_envs,), policy == 'teacher',
+                                                         device=device, dtype=torch.bool))
+                        deviation = (action.teacher_targets - action.teacher_targets[-1:]).abs()
+                        difference = deviation.mean(dim=(0, 2))
+                        maximum = deviation.amax(dim=(0, 2))
+                        owners = env.command_manager.get_term('twist').owner
+                        for i in range(count):
+                            if active[i]:
+                                stat = timing_by_owner[str(int(owners[i]))]
+                                stat['frames'] += 1
+                                stat['sum_abs_rad'] += float(difference[i])
+                                stat['max_abs_rad'] = max(stat['max_abs_rad'], float(maximum[i]))
                     obs, _, terminated, truncated, _ = env.step(actions)
                     dones = terminated | truncated
                     actor.reset(dones)
@@ -181,6 +204,8 @@ def evaluate_policy(*, policy='student', checkpoint=None, scenario='all', episod
                         record = records[i]
                         record['steps'] += 1
                         record['velocity_error_sum'] += float(sample['velocity_error'][i])
+                        record['substep_difference_sum'] += float(difference[i])
+                        record['substep_difference_max'] = max(record['substep_difference_max'], float(maximum[i]))
                         stage = STAGES[int(sample['stage'][i])]
                         gravity, height = sample['gravity'][i], float(sample['height'][i])
                         contacts = sample['contacts'][i]
@@ -199,15 +224,15 @@ def evaluate_policy(*, policy='student', checkpoint=None, scenario='all', episod
                     if not any(active):
                         break
                 batch += 1
+        for stat in timing_by_owner.values():
+            stat['mean_abs_rad'] = stat.pop('sum_abs_rad') / max(stat['frames'], 1)
         summary = {}
         for name in scenarios:
             rows = [row for row in results if row['scenario'] == name]
             summary[name] = dict(episodes=len(rows), successes=sum(row['success'] for row in rows),
                                  physical_failures=sum(row['physical_failure'] for row in rows),
                                  script_completions=sum(row['script_completed'] for row in rows))
-        return dict(schema_version=2, policy=policy,
-                    execution='native_action_zero_order_hold_direct_pd',
-                    checkpoint=str(Path(checkpoint).resolve()) if checkpoint else None,
+        return dict(schema_version=2, policy=policy, checkpoint=str(Path(checkpoint).resolve()) if checkpoint else None,
                     completed_updates=metadata['completed_updates'] if metadata else None,
                     split=split, seed=seed, device=str(device), num_envs=env.num_envs,
                     max_steps=max_steps, wall_seconds=time.perf_counter() - started,
@@ -219,6 +244,6 @@ def evaluate_policy(*, policy='student', checkpoint=None, scenario='all', episod
                                   final_quad_gravity_z_max=-.85, final_quad_height_m=[.18, .45],
                                   contact_force_min_n=5.,
                                   capture_phase='termination_manager_pre_auto_reset'),
-                    summary=summary, episodes=results)
+                    summary=summary, timing_by_owner=timing_by_owner, episodes=results)
     finally:
         env.close()

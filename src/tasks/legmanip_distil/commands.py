@@ -7,7 +7,7 @@ from src.tasks.teacher_common.commands import LocoPedipulationTeacherCommand, Lo
 from src.tasks.teacher_common.anchor_frame import anchor_basis, to_anchor
 from src.tasks.transition_t.commands import TransitionCommand, TransitionCommandCfg
 from src.tasks.transition_down_t.commands import DownMotion, align_reference
-from src.tasks.loco_pedipulation.mdp.commands import HOLD
+from src.tasks.loco_pedipulation.mdp.commands import QUAD, HOLD
 from .intent import ROOT
 
 QUADRUPED, RISE, BIPED, DOWN = 0, 2, 3, 4
@@ -72,6 +72,7 @@ class FSMCommand(LocoPedipulationTeacherCommand):
         self.rise_elapsed = torch.zeros(self.num_envs, device=self.device)
         self.down_elapsed = torch.zeros_like(self.rise_elapsed)
         self.returning = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self.fr_engaged = self.returning.clone()
         self.transition_elapsed = torch.zeros_like(self.rise_elapsed)
         self._last_advance_step = torch.full_like(self.owner, -1)
         self.references = {RISE: ReferenceState(cfg.rise_motion_file, env),
@@ -85,6 +86,7 @@ class FSMCommand(LocoPedipulationTeacherCommand):
         self.down_elapsed[ids] = 0.
         self.transition_elapsed[ids] = 0.
         self.returning[ids] = False
+        self.fr_engaged[ids] = intent.starts_biped[ids]
         self._last_advance_step[ids] = self._env.common_step_counter
         self._command[ids] = intent.command[ids]
         self.requested_velocity[ids] = intent.command[ids, :3]
@@ -168,3 +170,5 @@ class FSMCommand(LocoPedipulationTeacherCommand):
             self._command[ids, :3] = 0.
             self._command[ids, 3:] = self.reference_offset(owner)[ids]
         self.transition_elapsed += ((self.owner == RISE) | (self.owner == DOWN)) * advancing * dt
+        self.fr_engaged[(self.owner == QUADRUPED) & (self.phase == QUAD)] = False
+        self.fr_engaged |= controlled | ((self.phase == HOLD) & (self.blend >= 1.))
