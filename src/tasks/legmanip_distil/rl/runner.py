@@ -80,6 +80,9 @@ class LegManipDistillationRunner(DistillationRunner):
         if self.logger.writer is not None:
           self.logger.writer.add_scalar("DAgger/teacher_probability", losses["teacher_probability"], self.current_learning_iteration)
           self.logger.writer.add_scalar("DAgger/teacher_control_fraction", losses["teacher_control_fraction"], self.current_learning_iteration)
+          for name, value in losses.items():
+            if name.startswith("supermimic/"):
+              self.logger.writer.add_scalar(name, value, self.current_learning_iteration)
           if self.current_learning_iteration % self.cfg["save_interval"] == 0:
             self.save(str(Path(self.logger.log_dir) / f"model_{self.current_learning_iteration}.pt"))
       if self.logger.writer is not None:

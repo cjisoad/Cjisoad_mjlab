@@ -236,8 +236,9 @@ class LegManipDistillation(Distillation):
     self.reset_rollout_state()
     return restore_iteration
 
-  @staticmethod
+  @classmethod
   def construct_algorithm(
+    cls,
     obs: TensorDict,
     env,
     cfg: dict,
@@ -272,6 +273,6 @@ class LegManipDistillation(Distillation):
     algorithm_cfg = cfg["algorithm"]
     algorithm_cfg = asdict(algorithm_cfg) if is_dataclass(algorithm_cfg) else deepcopy(algorithm_cfg)
     algorithm_cfg.pop("class_name", None)
-    return LegManipDistillation(
+    return cls(
       student, teacher, storage, device=device, multi_gpu_cfg=cfg.get("multi_gpu"), **algorithm_cfg,
     )
